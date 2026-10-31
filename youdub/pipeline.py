@@ -26,6 +26,8 @@ from typing import Optional
 
 from loguru import logger
 
+from .text_frontend import normalization_identity
+
 # ── step imports ──────────────────────────────────────────────────────
 from .step000_video_downloader import (
     download_single_video,
@@ -316,8 +318,8 @@ def _tts_spec(folder: str, cfg: PipelineConfig) -> tuple[str, dict, list[str], l
         'step040_tts',
         {
             'tts_engine': cfg.tts_engine,
-            'text_normalization_version': 3,
             'speaker_references': reference_fingerprint(folder),
+            'text_normalization': normalization_identity(cfg.tts_engine),
             'target_language': cfg.translation_target_language,
             'formation_tts_style': os.getenv('FORMATION_TTS_STYLE', 'chinese_compact'),
             'upstream_translation': _file_input_token(os.path.join(folder, 'translation.json')),
