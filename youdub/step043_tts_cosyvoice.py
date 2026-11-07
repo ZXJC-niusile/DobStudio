@@ -137,29 +137,19 @@ def _collect_tts_chunks(result_generator):
     return chunks
 
 
-def _has_cjk(text: str) -> bool:
-    return any('\u4e00' <= ch <= '\u9fff' for ch in (text or ''))
-
-
-def _same_script_family(text_a: str, text_b: str) -> bool:
-    """Return True when prompt_text and target text share CJK vs non-CJK script."""
-    if not text_a or not text_b:
-        return False
-    return _has_cjk(text_a) == _has_cjk(text_b)
-
-
 def generate_cosyvoice_audio(
     text,
     prompt_speech_path,
     output_path,
     prompt_text="",
     device="auto",
+    prompt_pair_verified=False,
 ):
     """
     Generate TTS audio with CosyVoice voice cloning.
 
     Uses zero-shot mode ONLY when a genuine verbatim transcript matching the
-    reference speaker audio is available in the same language family; otherwise
+    reference speaker audio is verified in the same language; otherwise
     uses cross-lingual mode directly to avoid audio-prompt text mismatch artifacts.
     """
     text_clean = (text or "").strip()
@@ -174,7 +164,7 @@ def generate_cosyvoice_audio(
     prompt_path = _ensure_under_30s(prompt_speech_path)
     prompt_text = (prompt_text or "").strip()
 
-    use_zero_shot = bool(prompt_text) and _same_script_family(prompt_text, text_clean)
+    use_zero_shot = bool(prompt_text) and prompt_pair_verified and prompt_path == prompt_speech_path
 
     try:
         with infer_lock:

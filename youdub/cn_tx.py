@@ -883,121 +883,71 @@ class Percentage:
         return '百分之' + num2chn(self.percentage.strip().strip('%'))
 
 
+# Lex the original input once. Replacements are never scanned by another rule.
+# Technical identifiers are preserved; ambiguous bare integers remain quantities
+# unless their leading zeros or an explicit identifier prefix say otherwise.
+_NUMBER = r"(?:(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?|\.[0-9]+)"
+TECH_IDENTIFIER_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:[A-Za-z][A-Za-z_-]*[0-9]+(?:[._-][A-Za-z0-9]+)*[A-Za-z0-9_]*"
+    r"|[0-9]+(?:\.[0-9]+){2,})(?![A-Za-z0-9_])"
+)
+_ID_PREFIX = r"(?:编号|号码|代码|工号|学号|房间号|门牌号|邮编|证件号|卡号|ID|No\.?|#)\s*"
+_NUMERIC_TOKEN_RE = re.compile('|'.join(
+    f'(?P<{kind}>{pattern})' for kind, pattern in (
+        ('identifier', _ID_PREFIX + r'[0-9]+(?![0-9.])'),
+        ('technical', TECH_IDENTIFIER_RE.pattern),
+        ('scientific', r'[+-]?' + _NUMBER + r'[eE][+-]?[0-9]+'),
+        ('date', r'(?<![0-9.])(?:(?:[089][0-9]|(?:19|20)[0-9]{2})年(?:[0-9]{1,2}月(?:[0-9]{1,2}[日号])?)?|[0-9]{1,2}月(?:[0-9]{1,2}[日号])?)'),
+        ('fraction', r'[0-9]+/[0-9]+'),
+        ('percent', r'[+-]?' + _NUMBER + r'[%％]'),
+        ('quantity', r'[+-]?' + _NUMBER + r'[多余几]?' + COM_QUANTIFIERS),
+        ('phone', r'(?:\+?86 ?)?1[3-9][0-9]{9}(?![0-9])|0(?:10|2[1-3]|[3-9][0-9]{2})-?[1-9][0-9]{6,7}(?![0-9])'),
+        ('number', r'[+-]?' + _NUMBER),
+    )
+), re.IGNORECASE)
+
+
+def _spoken_number(value, *, identifier=False):
+    value = value.replace(',', '')
+    sign = ''
+    if value.startswith(('+', '-')):
+        sign = '正' if value[0] == '+' else '负'
+        value = value[1:]
+    if identifier:
+        return sign + Digit(digit=value).digit2chntext()
+    integer, point, fraction = value.partition('.')
+    value = (integer.lstrip('0') or '0') + point + fraction
+    return sign + Cardinal(cardinal=value).cardinal2chntext()
+
+
 def normalize_nsw(raw_text):
-    text = '^' + raw_text + '$'
+    """Convert non-overlapping typed spans, preserving all surrounding text."""
+    def render(match):
+        kind, value = match.lastgroup, match.group()
+        if kind == 'technical':
+            return value
+        if kind == 'identifier':
+            digits = re.search(r'[0-9]+$', value)
+            return value[:digits.start()] + _spoken_number(digits.group(), identifier=True)
+        if kind == 'scientific':
+            mantissa, exponent = re.split('[eE]', value)
+            return _spoken_number(mantissa) + '乘以十的' + _spoken_number(exponent) + '次方'
+        if kind == 'date':
+            return Date(date=value).date2chntext()
+        if kind == 'fraction':
+            return Fraction(fraction=value).fraction2chntext()
+        if kind == 'phone':
+            return TelePhone(telephone=value).telephone2chntext(fixed='-' in value)
+        if kind == 'percent':
+            return '百分之' + _spoken_number(value[:-1])
+        if kind == 'quantity':
+            number = re.match(r'[+-]?' + _NUMBER, value).group()
+            return _spoken_number(number) + value[len(number):]
+        digits = value.lstrip('+-')
+        is_code = '.' not in digits and ',' not in digits and len(digits) > 1 and digits.startswith('0')
+        return _spoken_number(value, identifier=is_code)
 
-    # 规范化日期
-    pattern = re.compile(
-        r"\D+((([089]\d|(19|20)\d{2})年)?(\d{1,2}月(\d{1,2}[日号])?)?)")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('date')
-        for matcher in matchers:
-            text = text.replace(matcher[0], Date(
-                date=matcher[0]).date2chntext(), 1)
-
-    # 规范化金钱
-    pattern = re.compile(
-        r"\D+((\d+(\.\d+)?)[多余几]?" + CURRENCY_UNITS + r"(\d" + CURRENCY_UNITS + r"?)?)")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('money')
-        for matcher in matchers:
-            text = text.replace(matcher[0], Money(
-                money=matcher[0]).money2chntext(), 1)
-
-    # 规范化固话/手机号码
-    # 手机
-    # http://www.jihaoba.com/news/show/13680
-    # 移动：139、138、137、136、135、134、159、158、157、150、151、152、188、187、182、183、184、178、198
-    # 联通：130、131、132、156、155、186、185、176
-    # 电信：133、153、189、180、181、177
-    pattern = re.compile(
-        r"\D((\+?86 ?)?1([38]\d|5[0-35-9]|7[678]|9[89])\d{8})\D")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('telephone')
-        for matcher in matchers:
-            text = text.replace(matcher[0], TelePhone(
-                telephone=matcher[0]).telephone2chntext(), 1)
-    # 固话
-    pattern = re.compile(r"\D((0(10|2[1-3]|[3-9]\d{2})-?)?[1-9]\d{6,7})\D")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('fixed telephone')
-        for matcher in matchers:
-            text = text.replace(matcher[0], TelePhone(
-                telephone=matcher[0]).telephone2chntext(fixed=True), 1)
-
-    # 规范化分数
-    pattern = re.compile(r"(\d+/\d+)")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('fraction')
-        for matcher in matchers:
-            text = text.replace(matcher, Fraction(
-                fraction=matcher).fraction2chntext(), 1)
-
-    # 规范化百分数
-    text = text.replace('％', '%')
-    pattern = re.compile(r"(\d+(\.\d+)?%)")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('percentage')
-        for matcher in matchers:
-            text = text.replace(matcher[0], Percentage(
-                percentage=matcher[0]).percentage2chntext(), 1)
-
-    # 规范化纯数+量词 (优先匹配有量词的数值，如 10000人, 5000台, 1000把)
-    pattern = re.compile(r"(\d+(\.\d+)?)[多余几]?" + COM_QUANTIFIERS)
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('cardinal+quantifier')
-        for matcher in matchers:
-            text = text.replace(matcher[0], Cardinal(
-                cardinal=matcher[0]).cardinal2chntext(), 1)
-
-    # 规范化前导0的编号代码 (如 007, 010, 00后；必须以非数字为前缀避免切断大数)
-    pattern = re.compile(r"(?<!\d)(0\d+)")
-    matchers = pattern.findall(text)
-    if matchers:
-        for matcher in matchers:
-            text = text.replace(matcher, Digit(
-                digit=matcher).digit2chntext(), 1)
-
-    # 规范化显式编号/代码 (如 编号1234, ID5678, 代码002)
-    pattern = re.compile(r"((?:编号|号码|代码|工号|学号|房间号|门牌号|邮编|证件号|卡号|ID|No\.?|#)\s*)(\d+)", re.IGNORECASE)
-    matchers = pattern.findall(text)
-    if matchers:
-        for prefix, num in matchers:
-            text = text.replace(f"{prefix}{num}", f"{prefix}{Digit(digit=num).digit2chntext()}", 1)
-
-    # 规范化纯数 (如 1000, 5000, 10000, 3.14)
-    pattern = re.compile(r"(\d+(\.\d+)?)")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('cardinal')
-        for matcher in matchers:
-            text = text.replace(matcher[0], Cardinal(
-                cardinal=matcher[0]).cardinal2chntext(), 1)
-
-    # 规范化剩余超长无量词连续编号串 (>= 7位，如无空格的序列号)
-    pattern = re.compile(r"(?<!\d)(\d{7,32})(?!\d)")
-    matchers = pattern.findall(text)
-    if matchers:
-        for matcher in matchers:
-            text = text.replace(matcher, Digit(
-                digit=matcher).digit2chntext(), 1)
-
-    # restore P2P, O2O, B2C, B2B etc
-    pattern = re.compile(r"(([a-zA-Z]+)二([a-zA-Z]+))")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('particular')
-        for matcher in matchers:
-            text = text.replace(matcher[0], matcher[1]+'2'+matcher[2], 1)
-
-    return text.lstrip('^').rstrip('$')
+    return _NUMERIC_TOKEN_RE.sub(render, raw_text)
 
 
 class TextNorm:

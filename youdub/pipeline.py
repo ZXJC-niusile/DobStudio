@@ -45,6 +45,7 @@ from .step030_translation import translate
 from .step040_tts import generate_wavs
 from .step050_synthesize_video import synthesize_video
 from .step060_generate_info import generate_info
+from .speaker_reference import reference_fingerprint
 from .utils import (
     mark_step_done,
     reserved_cuda_devices,
@@ -217,12 +218,14 @@ def _prepare_local_video_folder(local_video_path: str, root_folder: str) -> str:
         )
 
         if not source_unchanged:
-            if os.path.exists(target_video):
+            same_source = os.path.exists(target_video) and os.path.samefile(abs_src, target_video)
+            if os.path.exists(target_video) and not same_source:
                 try:
                     os.remove(target_video)
                 except OSError:
                     pass
-            _copy_or_remux_to_mp4(abs_src, target_video)
+            if not same_source:
+                _copy_or_remux_to_mp4(abs_src, target_video)
             with open(marker_path, "w", encoding="utf-8") as f:
                 json.dump(src_meta, f, indent=2, ensure_ascii=False)
             logger.info(f"Prepared local video at {target_video}")
@@ -284,6 +287,7 @@ def _transcript_spec(folder: str, cfg: PipelineConfig) -> tuple[str, dict, list[
             'whisper_model': cfg.whisper_model,
             'source_language': cfg.source_language,
             'whisper_diarization': cfg.whisper_diarization,
+            'speaker_reference_version': 3,
             'upstream_vocals': _file_input_token(os.path.join(folder, 'audio_vocals.wav')),
         },
         [
@@ -312,6 +316,8 @@ def _tts_spec(folder: str, cfg: PipelineConfig) -> tuple[str, dict, list[str], l
         'step040_tts',
         {
             'tts_engine': cfg.tts_engine,
+            'text_normalization_version': 3,
+            'speaker_references': reference_fingerprint(folder),
             'target_language': cfg.translation_target_language,
             'formation_tts_style': os.getenv('FORMATION_TTS_STYLE', 'chinese_compact'),
             'upstream_translation': _file_input_token(os.path.join(folder, 'translation.json')),

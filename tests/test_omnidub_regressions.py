@@ -999,5 +999,206 @@ class OmniDubRegressionTests(unittest.TestCase):
         self.assertIsNone(tr.extra_body)
 
 
+    def test_17_local_source_equal_to_destination_is_preserved(self):
+        from youdub import pipeline
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, 'download')
+            os.makedirs(folder)
+            source = os.path.join(folder, 'download.mp4')
+            for content in (b'original video', b'updated video content'):
+                with open(source, 'wb') as f:
+                    f.write(content)
+                with mock.patch.object(pipeline, '_copy_or_remux_to_mp4') as copy:
+                    result = pipeline._prepare_local_video_folder(source, tmp)
+                    self.assertEqual(result, folder)
+                    copy.assert_not_called()
+                with open(source, 'rb') as f:
+                    self.assertEqual(f.read(), content)
+                with open(os.path.join(folder, '.local_source.json'), encoding='utf-8') as f:
+                    self.assertEqual(json.load(f)['size'], len(content))
+
+    def test_18_decimal_fraction_zeros_are_not_identifier_codes(self):
+        from youdub.cn_tx import TextNorm
+
+        norm = TextNorm()
+        for raw, expected in (
+            ('0.05', '零点零五'),
+            ('3.05', '三点零五'),
+            ('0.001', '零点零零一'),
+            ('0.05和05', '零点零五和零五'),
+            ('特工007', '特工零零七'),
+            ('00后', '零零后'),
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(norm(raw), expected)
+
+    def test_19_speaker_reference_uses_complete_audio_text_pairs(self):
+        from youdub import step020_whisperx as wx
+
+        sr = 24000
+        audio = np.full(45 * sr, 0.25, dtype=np.float32)
+        audio[21 * sr:] = 0.75
+        segments = [
+            {'start': 0, 'end': 20, 'text': 'First sentence.', 'speaker': 'SPEAKER_00', 'timing_reliable': True},
+            {'start': 21, 'end': 40, 'text': 'Second sentence.', 'speaker': 'SPEAKER_00', 'timing_reliable': True},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(wx.librosa, 'load', return_value=(audio, sr)):
+                wx.generate_speaker_audio(tmp, segments)
+            wav_path = os.path.join(tmp, 'SPEAKER', 'SPEAKER_00.wav')
+            rate, wav = _read_wav_int16(wav_path)
+            self.assertEqual(len(wav), int(20.05 * sr))
+            self.assertLessEqual(len(wav) / rate, 29)
+            self.assertTrue(np.all(wav == round(0.25 * 32767)))
+            with open(os.path.join(tmp, 'SPEAKER', 'SPEAKER_00.txt'), encoding='utf-8') as f:
+                self.assertEqual(f.read(), 'First sentence.')
+
+    def test_20_long_speaker_reference_falls_back_without_stale_text(self):
+        from youdub import step020_whisperx as wx
+
+        sr = 24000
+        with tempfile.TemporaryDirectory() as tmp:
+            speaker_dir = os.path.join(tmp, 'SPEAKER')
+            os.makedirs(speaker_dir)
+            txt = os.path.join(speaker_dir, 'SPEAKER_00.txt')
+            trim = os.path.join(speaker_dir, 'SPEAKER_00.wav_30s.wav')
+            for path in (txt, trim):
+                with open(path, 'wb') as f:
+                    f.write(b'stale reference')
+            with mock.patch.object(wx.librosa, 'load', return_value=(np.ones(40 * sr) * 0.2, sr)):
+                wx.generate_speaker_audio(tmp, [
+                    {'start': 0, 'end': 35, 'text': 'A long utterance.', 'speaker': 'SPEAKER_00'},
+                ])
+            _, wav = _read_wav_int16(os.path.join(speaker_dir, 'SPEAKER_00.wav'))
+            self.assertEqual(len(wav), 29 * sr)
+            self.assertFalse(os.path.exists(txt))
+            self.assertFalse(os.path.exists(trim))
+
+    def test_21_tts_retry_keeps_segments_but_changed_inputs_invalidate(self):
+        from youdub import pipeline, utils
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = pipeline.PipelineConfig()
+            name, params, outputs, extra = pipeline._tts_spec(tmp, cfg)
+            self.assertFalse(utils.should_skip_step(tmp, name, params, outputs, extra))
+            segment = os.path.join(tmp, 'wavs', '0000.wav')
+            os.makedirs(os.path.dirname(segment))
+            with open(segment, 'wb') as f:
+                f.write(b'completed segment')
+            # A crash may leave all outputs nonempty, but no success marker.
+            for path in outputs:
+                with open(path, 'wb') as f:
+                    f.write(b'partial output')
+            self.assertFalse(utils.should_skip_step(tmp, name, params, outputs, extra))
+            self.assertTrue(os.path.isfile(segment))
+            self.assertTrue(all(not os.path.exists(path) for path in outputs))
+            self.assertFalse(os.path.exists(os.path.join(tmp, f'.{name}.fingerprint')))
+            # Changed upstream translation must remove incompatible segments.
+            with open(os.path.join(tmp, 'translation.json'), 'w', encoding='utf-8') as f:
+                json.dump([{'translation': 'new words'}], f)
+            name, params, outputs, extra = pipeline._tts_spec(tmp, cfg)
+            self.assertFalse(utils.should_skip_step(tmp, name, params, outputs, extra))
+            self.assertFalse(os.path.exists(segment))
+            for path in outputs:
+                with open(path, 'wb') as f:
+                    f.write(b'finished output')
+            utils.mark_step_done(tmp, name, params, outputs)
+            self.assertTrue(utils.should_skip_step(tmp, name, params, outputs, extra))
+            self.assertFalse(os.path.exists(os.path.join(tmp, f'.{name}.pending.fingerprint')))
+
+
+    def test_22_numeric_tokens_are_isolated_and_idempotent(self):
+        from itertools import permutations
+        from youdub.cn_tx import TextNorm
+
+        norm = TextNorm()
+        cases = [
+            ('0.05', '零点零五'), ('编号05', '编号零五'), ('05人', '五人'),
+            ('-0.05', '负零点零五'), ('1,000.05', '一千点零五'),
+            ('0.05%', '百分之零点零五'), ('3/5', '五分之三'),
+            ('.05', '零点零五'), ('1.2e-3', '一点二乘以十的负三次方'),
+            ('10000000人', '一千万人'), ('2024年5月1日', '二零二四年五月一日'),
+            ('GPT-4', 'GPT-4'), ('A100', 'A100'), ('v1.02', 'v1.02'),
+            ('1.2.3', '1.2.3'), ('P2P', 'P2P'),
+            ('电话13800138000', '电话一三八零零一三八零零零'),
+        ]
+        for pair in permutations(cases, 2):
+            raw = '；'.join(item[0] for item in pair)
+            expected = '；'.join(item[1] for item in pair)
+            with self.subTest(raw=raw):
+                self.assertEqual(norm(raw), expected)
+                self.assertEqual(norm(expected), expected)
+        # A code and a quantity sharing a digit prefix cannot rewrite each other.
+        self.assertEqual(norm('编号10000，10000人'), '编号一零零零零，一万人')
+        self.assertEqual(norm('^0.05$'), '^零点零五$')
+
+    def test_23_tts_preserves_identifiers_through_all_preprocessing(self):
+        from youdub.step040_tts import preprocess_text
+
+        self.assertEqual(preprocess_text('使用GPT-4和A100，版本v1.02，误差0.05'),
+                         '使用GPT-4和A100，版本v1.02，误差零点零五')
+        self.assertEqual(preprocess_text('连接P2P网络'), '连接P2P网络')
+        self.assertEqual(preprocess_text('ID005，误差1.2E-3'), 'ID零零五，误差一点二乘以十的负三次方')
+
+    def test_24_prompt_provenance_language_and_audio_integrity(self):
+        from youdub import step020_whisperx as wx, step040_tts as tts, pipeline
+
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = [{'start': 0, 'end': 1, 'text': 'Hello.', 'speaker': 'SPEAKER_00'}]
+            segments = wx._sanitize_aligned_segments(raw)
+            with mock.patch.object(wx.librosa, 'load', return_value=(np.ones(48000) * 0.2, 24000)):
+                wx.generate_speaker_audio(tmp, segments, language='en')
+            self.assertEqual(tts._load_speaker_prompt_texts(tmp, {'SPEAKER_00'}, 'English'),
+                             {'SPEAKER_00': 'Hello.'})
+            self.assertEqual(tts._load_speaker_prompt_texts(tmp, {'SPEAKER_00'}, 'ja'), {})
+            text_path = os.path.join(tmp, 'SPEAKER', 'SPEAKER_00.txt')
+            with open(text_path, 'w', encoding='utf-8') as f:
+                f.write('Different words.')
+            self.assertEqual(tts._load_speaker_prompt_texts(tmp, {'SPEAKER_00'}, 'English'), {})
+            with open(text_path, 'w', encoding='utf-8') as f:
+                f.write('Hello.')
+            cfg = pipeline.PipelineConfig()
+            before = pipeline._tts_spec(tmp, cfg)[1]
+            wav = os.path.join(tmp, 'SPEAKER', 'SPEAKER_00.wav')
+            with open(wav, 'ab') as f:
+                f.write(b'changed')
+            self.assertEqual(tts._load_speaker_prompt_texts(tmp, {'SPEAKER_00'}, 'English'), {})
+            self.assertNotEqual(before, pipeline._tts_spec(tmp, cfg)[1])
+            # Guessed timestamps must not create a text-conditioned prompt pair.
+            estimated = wx._sanitize_aligned_segments([{'text': 'Guessed.'}])
+            self.assertFalse(estimated[0]['timing_reliable'])
+            merged = wx.merge_segments([
+                dict(segments[0], text='Hello'),
+                dict(estimated[0], start=1.1, end=1.5),
+            ])
+            self.assertFalse(merged[0]['timing_reliable'])
+            with mock.patch.object(wx.librosa, 'load', return_value=(np.ones(48000) * 0.2, 24000)):
+                wx.generate_speaker_audio(tmp, estimated, language='en')
+            self.assertEqual(tts._load_speaker_prompt_texts(tmp, {'SPEAKER_00'}, 'English'), {})
+
+    def test_25_cosyvoice_does_not_guess_prompt_language_from_script(self):
+        from youdub import step043_tts_cosyvoice as cv
+
+        tensor = mock.Mock()
+        tensor.dim.return_value = 2
+        for verified, trimmed, expect_zero in ((False, False, False), (True, False, True), (True, True, False)):
+            model = mock.Mock(sample_rate=24000)
+            model.inference_zero_shot.return_value = iter([{'tts_speech': tensor}])
+            model.inference_cross_lingual.return_value = iter([{'tts_speech': tensor}])
+            with tempfile.TemporaryDirectory() as tmp:
+                reference = os.path.join(tmp, 'reference.wav')
+                actual = reference + '_30s.wav' if trimmed else reference
+                with mock.patch.object(cv, 'load_cosyvoice_model', return_value=model), \
+                     mock.patch.object(cv, '_ensure_under_30s', return_value=actual), \
+                     mock.patch.object(cv.torch, 'cat', return_value=tensor), \
+                     mock.patch.object(cv.torchaudio, 'save'):
+                    cv.generate_cosyvoice_audio('Hello.', reference, os.path.join(tmp, 'out.wav'),
+                                                prompt_text='こんにちは。', device='cpu',
+                                                prompt_pair_verified=verified)
+                self.assertEqual(model.inference_zero_shot.called, expect_zero)
+                self.assertEqual(model.inference_cross_lingual.called, not expect_zero)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

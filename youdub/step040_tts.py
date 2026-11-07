@@ -8,8 +8,9 @@ import librosa
 from loguru import logger
 import numpy as np
 
-from .cn_tx import TextNorm
+from .cn_tx import TECH_IDENTIFIER_RE, TextNorm
 from .utils import compute_fingerprint, save_wav, save_wav_norm
+from .speaker_reference import reference_fingerprint, verified_prompt
 
 normalizer = TextNorm()
 
@@ -211,6 +212,19 @@ def preprocess_text(text, target_language='简体中文'):
     if not _is_chinese_text_or_target(text, target_language):
         return text
 
+    # Keep product/version tokens out of all speech-notation rewrites, not just
+    # the numeric normalizer (e.g. GPT-4, A100, v1.02, P2P).
+    parts = []
+    cursor = 0
+    for match in TECH_IDENTIFIER_RE.finditer(text):
+        parts.append(_preprocess_chinese_span(text[cursor:match.start()]))
+        parts.append(normalizer(match.group()))
+        cursor = match.end()
+    parts.append(_preprocess_chinese_span(text[cursor:]))
+    return ''.join(parts).strip()
+
+
+def _preprocess_chinese_span(text):
     text = re.sub(r'(?<![A-Za-z0-9])AI(?![A-Za-z0-9])', '人工智能', text)
     text = normalize_name_connector_notation(text)
     text = normalize_iso_date_notation(text)
@@ -219,10 +233,10 @@ def preprocess_text(text, target_language='简体中文'):
     text = normalize_formation_notation(text)
     text = normalize_range_notation(text)
     text = normalize_score_notation(text)
-    text = re.sub(r'(?<!^)([A-Z])', r' \1', text)
+    text = re.sub(r'(?<!^)(?<!\d)([A-Z])', r' \1', text)
     text = normalizer(text)
     text = re.sub(r'(?<=[a-zA-Z])(?=\d)|(?<=\d)(?=[a-zA-Z])', ' ', text)
-    return text.strip() if _has_speakable_content(text) else ''
+    return text
 
 
 def adjust_audio_length(
@@ -253,8 +267,8 @@ def adjust_audio_length(
     return sliced, actual_len, speed_factor, current_length
 
 
-def _load_speaker_prompt_texts(folder: str, speakers: set[str]) -> dict[str, str]:
-    """Load verbatim reference prompt text per speaker (saved alongside SPEAKER/{spk}.wav)."""
+def _load_speaker_prompt_texts(folder: str, speakers: set[str], target_language='') -> dict[str, str]:
+    """Load only hash-bound, language-matched ASR prompts for each speaker."""
     prompts = {}
     speaker_dir = os.path.join(folder, 'SPEAKER')
     for spk in speakers:
@@ -263,6 +277,9 @@ def _load_speaker_prompt_texts(folder: str, speakers: set[str]) -> dict[str, str
             try:
                 with open(txt_path, 'r', encoding='utf-8') as f:
                     content = f.read().strip()
+                content = verified_prompt(
+                    os.path.join(speaker_dir, f'{spk}.wav'), content, target_language
+                )
                 if content:
                     prompts[spk] = content
             except OSError:
@@ -339,6 +356,7 @@ def _select_tts_func(
                 output_path,
                 prompt_text=prompt_text,
                 device=tts_device,
+                prompt_pair_verified=bool(prompt_text),
             )
         return _cosyvoice
 
@@ -382,6 +400,8 @@ def generate_wavs(folder, tts_engine=None, tts_device='auto', target_language='�
         output_folder,
         {
             'tts_engine': tts_engine,
+            'text_normalization_version': 3,
+            'speaker_references': reference_fingerprint(folder),
             'target_language': target_language,
             'formation_tts_style': os.getenv('FORMATION_TTS_STYLE', FORMATION_TTS_STYLE),
             'segments': [
@@ -391,7 +411,7 @@ def generate_wavs(folder, tts_engine=None, tts_device='auto', target_language='�
         },
     )
 
-    speaker_prompts = _load_speaker_prompt_texts(folder, speakers) if tts_engine == 'cosyvoice' else {}
+    speaker_prompts = _load_speaker_prompt_texts(folder, speakers, target_language) if tts_engine == 'cosyvoice' else {}
     tts_func = _select_tts_func(
         tts_engine,
         speaker_prompts,

@@ -1,0 +1,22 @@
+{
+  "checked_on": "2026-11-07",
+  "scope": "current main working tree including pre-existing uncommitted fixes; no business edits",
+  "head": "7b161e58f110ea4712ca4599b02ae892325b0e17",
+  "native_frontend_pr": {"number": 13, "state": "open", "merged": false, "head": "f79354d0a5112490ea7d1545aea8abfbdb9b158e"},
+  "existing_regression_suite": {"tests": 25, "passed": 25, "skipped": 0, "uses_optional_ml_stubs": true},
+  "probes": {
+    "config_drift_after_import": {"fingerprint_model": "audit-other-model", "actual_module_model": "gpt-3.5-turbo", "fingerprint_batch": "99", "actual_module_batch": 10},
+    "xtts_registry_mock_constructor": {"different_path_returns_same_instance": true, "cpu_fallback_duplicates_instance": true, "constructor_calls": [["model-A", "cpu"], ["model-A", "cpu"]]},
+    "overlapping_real_context_managers": {"order": ["xtts-enter", "whisperx-enter", "xtts-exit", "whisperx-exit"], "first_exit_removes_still_active_patch": true, "final_load_restored": false, "manual_cleanup_restored_original_after_probe": true},
+    "direct_translate_with_existing_output": {"target_language": "English", "returned_success": true, "translation_called": false, "old_output_kept": true},
+    "cached_pipeline_mock_models": {"all_steps_cached": true, "demucs_warmups": 1, "whisper_warmups": 1, "tts_warmups": 1, "success": true},
+    "speaker_count_cache_identity": {"changed_fields": {"whisper_min_speakers": 2, "whisper_max_speakers": 4}, "identity_changed": false}
+  },
+  "static_checks": {
+    "identical_function_bodies": ["youdub/pipeline.py:258:_has_speaker_wavs", "youdub/step020_whisperx.py:342:_has_valid_speaker_wavs"],
+    "unused_cn_tx_imports": ["sys", "argparse", "csv"],
+    "Money_and_Percentage_unused_only_in_current_uncommitted_version": true,
+    "git_diff_check_passed": true
+  },
+  "not_validated": ["real speech models", "GPU execution", "ttsfrd runtime", "audio quality", "second repository integration", "full dependency compatibility"]
+}

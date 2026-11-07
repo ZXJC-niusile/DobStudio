@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 import importlib
 import json
+import math
 import os
 import pickle
 import threading
@@ -14,6 +15,7 @@ import torch
 import whisperx
 
 from .utils import resolve_torch_device, save_wav
+from .speaker_reference import write_reference_metadata
 
 load_dotenv()
 
@@ -272,6 +274,11 @@ def _sanitize_aligned_segments(raw_segments: list[dict]) -> list[dict]:
             continue
         start = seg.get('start')
         end = seg.get('end')
+        reliable = (
+            start is not None and end is not None
+            and math.isfinite(float(start)) and math.isfinite(float(end))
+            and 0 <= float(start) < float(end)
+        )
         if start is None or end is None:
             words = [w for w in (seg.get('words') or []) if isinstance(w, dict)]
             word_starts = [float(w['start']) for w in words if w.get('start') is not None]
@@ -296,6 +303,7 @@ def _sanitize_aligned_segments(raw_segments: list[dict]) -> list[dict]:
             'end': round(end_f, 3),
             'text': text,
             'speaker': seg.get('speaker') or 'SPEAKER_00',
+            'timing_reliable': reliable,
         })
     return sanitized
 
@@ -321,6 +329,9 @@ def merge_segments(transcript, max_gap=0.5):
             spacer = '' if current.get('text', '').endswith(' ') else ' '
             current['text'] = f"{current.get('text', '')}{spacer}{(segment.get('text') or '').strip()}".strip()
             current['end'] = max(float(current['end']), float(segment['end']))
+            current['timing_reliable'] = (
+                current.get('timing_reliable', False) and segment.get('timing_reliable', False)
+            )
         else:
             entry = dict(segment)
             entry['speaker'] = seg_speaker
@@ -458,15 +469,16 @@ def transcribe_audio(
     with open(transcript_path, 'w', encoding='utf-8') as f:
         json.dump(transcript, f, indent=4, ensure_ascii=False)
     logger.info(f'Transcribed {wav_path} successfully, and saved to {transcript_path}')
-    generate_speaker_audio(folder, transcript)
+    generate_speaker_audio(folder, transcript, language=align_language)
     return True
 
 
-def generate_speaker_audio(folder, transcript):
+def generate_speaker_audio(folder, transcript, language=None):
     wav_path = os.path.join(folder, 'audio_vocals.wav')
     audio_data, samplerate = librosa.load(wav_path, sr=24000)
     speaker_dict = {}
     speaker_prompts = {}
+    speaker_fallbacks = {}
     max_prompt_samples = int(29.0 * samplerate)
     length = len(audio_data)
     delay = 0.05
@@ -478,14 +490,18 @@ def generate_speaker_audio(folder, transcript):
         speaker_segment_audio = audio_data[start:end] if end > start else np.zeros((0,))
         prev_audio = speaker_dict.get(speaker, np.zeros((0,)))
 
-        # Record verbatim transcript matching the <=29s reference prefix of SPEAKER/{speaker}.wav
-        # so same-language zero-shot TTS has an exact audio-text pair.
-        if len(speaker_segment_audio) > 0 and len(prev_audio) + len(speaker_segment_audio) <= max_prompt_samples:
-            seg_text = (segment.get('text') or '').strip()
-            if seg_text:
-                speaker_prompts.setdefault(speaker, []).append(seg_text)
-
-        speaker_dict[speaker] = np.concatenate((prev_audio, speaker_segment_audio))
+        speaker_dict.setdefault(speaker, prev_audio)
+        if len(speaker_segment_audio) > 0:
+            speaker_fallbacks.setdefault(speaker, speaker_segment_audio[:max_prompt_samples])
+        # Include audio and text together, only at complete segment boundaries.
+        # A clipped segment has no reliable verbatim transcript and is fallback-only.
+        seg_text = (segment.get('text') or '').strip()
+        complete_segment = 0 <= float(segment['start']) < float(segment['end']) <= length / samplerate
+        if (seg_text and complete_segment and segment.get('timing_reliable', False)
+                and len(speaker_segment_audio) > 0
+                and len(prev_audio) + len(speaker_segment_audio) <= max_prompt_samples):
+            speaker_prompts.setdefault(speaker, []).append(seg_text)
+            speaker_dict[speaker] = np.concatenate((prev_audio, speaker_segment_audio))
 
     speaker_folder = os.path.join(folder, 'SPEAKER')
     os.makedirs(speaker_folder, exist_ok=True)
@@ -498,11 +514,18 @@ def generate_speaker_audio(folder, transcript):
 
     for speaker, audio in speaker_dict.items():
         if len(audio) == 0:
-            audio = fallback_clip
+            audio = speaker_fallbacks.get(speaker, fallback_clip)
         speaker_file_path = os.path.join(speaker_folder, f'{speaker}.wav')
         save_wav(audio, speaker_file_path)
+        # Discard trims/text from an older reference when regenerating in place.
+        trim_path = speaker_file_path + '_30s.wav'
+        if os.path.isfile(trim_path):
+            os.remove(trim_path)
         prompt_lines = speaker_prompts.get(speaker)
+        prompt_txt_path = os.path.join(speaker_folder, f'{speaker}.txt')
         if prompt_lines:
-            prompt_txt_path = os.path.join(speaker_folder, f'{speaker}.txt')
             with open(prompt_txt_path, 'w', encoding='utf-8') as f:
                 f.write(' '.join(prompt_lines))
+        elif os.path.isfile(prompt_txt_path):
+            os.remove(prompt_txt_path)
+        write_reference_metadata(speaker_file_path, ' '.join(prompt_lines or []), language)
