@@ -4,35 +4,14 @@ import os
 import re
 import time
 
-from dotenv import load_dotenv
 from loguru import logger
 from openai import OpenAI
+from .config import TranslationConfig, canonical_language
 
-load_dotenv()
-
-model_name = os.getenv('MODEL_NAME', 'gpt-3.5-turbo')
-logger.info(f'using model {model_name}')
-
-# Repetition penalty is a vLLM/FastChat vendor parameter. If using standard OpenAI or proxies
-# that reject extra fields, leave OMNIDUB_REPETITION_PENALTY unset (or set to 0) to omit.
-_rep_penalty_env = os.getenv('OMNIDUB_REPETITION_PENALTY')
-try:
-    _rep_penalty_val = float(_rep_penalty_env) if _rep_penalty_env else None
-except ValueError:
-    _rep_penalty_val = None
-extra_body = {'repetition_penalty': _rep_penalty_val} if _rep_penalty_val and _rep_penalty_val > 1.0 else None
-# Lines translated per API call. Batching cuts request count ~10x vs the old
-# one-call-per-line loop while preserving order via index tags. Env-overridable.
-try:
-    TRANSLATION_BATCH_SIZE = max(1, int(os.getenv('TRANSLATION_BATCH_SIZE', '10')))
-except ValueError:
-    TRANSLATION_BATCH_SIZE = 10
-
-_CJK_TARGET_LANGUAGES = {'简体中文', '繁体中文', 'zh', 'zh-cn', 'zh-tw', 'zh-hans', 'zh-hant'}
 
 
 def _is_chinese_target(target_language: str) -> bool:
-    return str(target_language or '').strip().lower() in {x.lower() for x in _CJK_TARGET_LANGUAGES}
+    return canonical_language(target_language) == 'zh'
 
 
 def _contains_cjk_or_kana(text: str) -> bool:
@@ -163,8 +142,9 @@ def _get_response_text_multiline(response):
     return str(content)
 
 
-def summarize(info, transcript, target_language='简体中文'):
-    client = _make_client()
+def summarize(info, transcript, target_language='简体中文', settings=None):
+    settings = settings or TranslationConfig.from_env()
+    client = _make_client(settings)
     transcript_text = ensure_transcript_length(
         ' '.join(line['text'] for line in transcript),
         max_length=2000,
@@ -191,13 +171,13 @@ def summarize(info, transcript, target_language='简体中文'):
         try:
             try:
                 response = client.chat.completions.create(
-                    model=model_name,
+                    model=settings.model,
                     messages=[
                         {'role': 'system', 'content': summary_system},
                         {'role': 'user', 'content': full_description + format_hint},
                     ],
                     timeout=240,
-                    extra_body=extra_body,
+                    extra_body=settings.extra_body,
                 )
             except Exception as api_e:
                 raise RuntimeError(f'chat.completions.create failed: {_format_api_exception(api_e)}')
@@ -244,13 +224,13 @@ def summarize(info, transcript, target_language='简体中文'):
         try:
             try:
                 response = client.chat.completions.create(
-                    model=model_name,
+                    model=settings.model,
                     messages=[
                         {'role': 'system', 'content': translate_system},
                         {'role': 'user', 'content': translate_user},
                     ],
                     timeout=240,
-                    extra_body=extra_body,
+                    extra_body=settings.extra_body,
                 )
             except Exception as api_e:
                 raise RuntimeError(f'chat.completions.create failed: {_format_api_exception(api_e)}')
@@ -399,10 +379,10 @@ def split_sentences(translation):
     return output_data
 
 
-def _make_client():
+def _make_client(settings):
     return OpenAI(
-        base_url=os.getenv('OPENAI_API_BASE', 'https://api.openai.com/v1'),
-        api_key=os.getenv('OPENAI_API_KEY'),
+        base_url=settings.base_url,
+        api_key=settings.api_key,
     )
 
 
@@ -452,7 +432,8 @@ def _parse_numbered_batch(reply, expected, target_language='简体中文', batch
     return [parsed.get(i + 1) for i in range(expected)]
 
 
-def _translate_batch(client, system_content, context_pairs, batch_texts, target_language, max_retries=3):
+def _translate_batch(client, system_content, context_pairs, batch_texts, target_language, max_retries=3, settings=None):
+    settings = settings or TranslationConfig.from_env()
     n = len(batch_texts)
     merged = [None] * n
 
@@ -481,7 +462,7 @@ def _translate_batch(client, system_content, context_pairs, batch_texts, target_
         try:
             try:
                 response = client.chat.completions.create(
-                    model=model_name, messages=messages, timeout=240, extra_body=extra_body
+                    model=settings.model, messages=messages, timeout=240, extra_body=settings.extra_body
                 )
             except Exception as api_e:
                 raise RuntimeError(f'chat.completions.create failed: {_format_api_exception(api_e)}')
@@ -502,7 +483,8 @@ def _translate_batch(client, system_content, context_pairs, batch_texts, target_
     return merged
 
 
-def _translate_single(client, system_content, context_pairs, text, target_language, max_retries=10):
+def _translate_single(client, system_content, context_pairs, text, target_language, max_retries=10, settings=None):
+    settings = settings or TranslationConfig.from_env()
     """Per-line translation with strict validation. Returns str or None."""
     is_zh = _is_chinese_target(target_language)
     history = []
@@ -533,7 +515,7 @@ def _translate_single(client, system_content, context_pairs, text, target_langua
         try:
             try:
                 response = client.chat.completions.create(
-                    model=model_name, messages=messages, timeout=240, extra_body=extra_body
+                    model=settings.model, messages=messages, timeout=240, extra_body=settings.extra_body
                 )
             except Exception as api_e:
                 raise RuntimeError(f'chat.completions.create failed: {_format_api_exception(api_e)}')
@@ -548,11 +530,12 @@ def _translate_single(client, system_content, context_pairs, text, target_langua
     return None
 
 
-def _rescue_translate(client, text, target_language):
+def _rescue_translate(client, text, target_language, settings=None):
+    settings = settings or TranslationConfig.from_env()
     """Last-ditch minimal-prompt translation (no history)."""
     try:
         response = client.chat.completions.create(
-            model=model_name,
+            model=settings.model,
             messages=[
                 {
                     'role': 'user',
@@ -563,7 +546,7 @@ def _rescue_translate(client, text, target_language):
                 }
             ],
             timeout=240,
-            extra_body=extra_body,
+            extra_body=settings.extra_body,
         )
         out = _strip_translation_wrappers(_get_response_text(response))
         return translation_postprocess(out, target_language) if out else None
@@ -572,8 +555,9 @@ def _rescue_translate(client, text, target_language):
         return None
 
 
-def _translate(summary, transcript, target_language='简体中文'):
-    client = _make_client()
+def _translate(summary, transcript, target_language='简体中文', settings=None):
+    settings = settings or TranslationConfig.from_env()
+    client = _make_client(settings)
     info = f'This is a video called "{summary["title"]}". {summary["summary"]}.'
     system_content = _translation_system_content(info, target_language)
     n = len(transcript)
@@ -585,8 +569,8 @@ def _translate(summary, transcript, target_language='简体中文'):
     # Pass 1: batched translation (~10x fewer API requests).
     idx = 0
     while idx < n:
-        batch_texts = texts[idx: idx + TRANSLATION_BATCH_SIZE]
-        got = _translate_batch(client, system_content, context_pairs, batch_texts, target_language)
+        batch_texts = texts[idx: idx + settings.batch_size]
+        got = _translate_batch(client, system_content, context_pairs, batch_texts, target_language, settings=settings)
         for j, tr in enumerate(got):
             if tr:
                 full_translation[idx + j] = tr
@@ -599,9 +583,9 @@ def _translate(summary, transcript, target_language='简体中文'):
         if full_translation[pos] is not None:
             continue
         text = texts[pos]
-        tr = _translate_single(client, system_content, context_pairs, text, target_language)
+        tr = _translate_single(client, system_content, context_pairs, text, target_language, settings=settings)
         if tr is None:
-            tr = _rescue_translate(client, text, target_language)
+            tr = _rescue_translate(client, text, target_language, settings=settings)
         if tr is None:
             logger.warning(
                 f'Translation failed for line {pos}: "{text[:60]}..." — using original text.'
@@ -612,11 +596,9 @@ def _translate(summary, transcript, target_language='简体中文'):
     return full_translation
 
 
-def translate(folder, target_language='简体中文'):
+def translate(folder, target_language='简体中文', settings=None):
+    settings = settings or TranslationConfig.from_env()
     translation_path = os.path.join(folder, 'translation.json')
-    if os.path.isfile(translation_path) and os.path.getsize(translation_path) > 0:
-        logger.info(f'Translation already exists in {folder}')
-        return True
 
     info_path = os.path.join(folder, 'download.info.json')
     if os.path.exists(info_path):
@@ -647,28 +629,10 @@ def translate(folder, target_language='简体中文'):
         raise RuntimeError(f'Invalid or empty transcript in {folder}')
 
     summary_path = os.path.join(folder, 'summary.json')
-    summary = None
-    if os.path.exists(summary_path):
-        try:
-            with open(summary_path, 'r', encoding='utf-8') as f:
-                cached_summary = json.load(f)
-            if (
-                isinstance(cached_summary, dict)
-                and 'title' in cached_summary
-                and cached_summary.get('language', target_language) == target_language
-            ):
-                summary = cached_summary
-        except Exception as e:
-            logger.warning(f'Corrupt summary.json, regenerating: {e}')
-
-    if summary is None:
-        summary = summarize(info, transcript, target_language)
-        if summary is None:
-            raise RuntimeError(f'Failed to summarize {folder}')
-        with open(summary_path, 'w', encoding='utf-8') as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False)
-
-    translation = _translate(summary, transcript, target_language)
+    summary = summarize(info, transcript, target_language, settings=settings)
+    with open(summary_path, 'w', encoding='utf-8') as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+    translation = _translate(summary, transcript, target_language, settings=settings)
 
     # Defensive: pad or trim translation list to match transcript length without mutating originals.
     if len(translation) < len(transcript):

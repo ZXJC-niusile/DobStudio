@@ -9,6 +9,7 @@ from loguru import logger
 import numpy as np
 
 from .text_frontend import normalization_identity
+from .config import canonical_language
 from .cn_tx import TECH_IDENTIFIER_RE, TextNorm
 from .utils import compute_fingerprint, save_wav, save_wav_norm
 from .speaker_reference import reference_fingerprint, verified_prompt
@@ -21,31 +22,11 @@ normalizer = TextNorm()
 MIN_STRETCH_RATIO = 0.82
 MAX_STRETCH_RATIO = 1.0
 SHORT_GAP_NO_SILENCE_SEC = 0.6
-FORMATION_TTS_STYLE = os.getenv('FORMATION_TTS_STYLE', 'chinese_compact')
+FORMATION_TTS_STYLE = 'chinese_compact'
 _DIGIT_TO_CN = {
     '0': '零', '1': '一', '2': '二', '3': '三', '4': '四',
     '5': '五', '6': '六', '7': '七', '8': '八', '9': '九',
 }
-_TARGET_TO_XTTS_LANG = {
-    '简体中文': 'zh-cn',
-    '繁体中文': 'zh-cn',
-    'zh': 'zh-cn',
-    'zh-cn': 'zh-cn',
-    'english': 'en',
-    'en': 'en',
-    'deutsch': 'de',
-    'de': 'de',
-    'français': 'fr',
-    'francais': 'fr',
-    'fr': 'fr',
-    'русский': 'ru',
-    'ru': 'ru',
-    'español': 'es',
-    'es': 'es',
-    'ja': 'ja',
-    'ko': 'ko',
-}
-
 _STAGE_BRACKETS_RE = re.compile(r'[\(\（\[\【][^)\）\]\】]*[\)\）\]\】]')
 _SCORE_CONTEXT_BEFORE_RE = re.compile(r'(?:比分|战成|踢成|打成|领先|落后|以)\s*$')
 _SCORE_CONTEXT_AFTER_RE = re.compile(r'^\s*(?:获胜|取胜|胜|负|平|战平|领先|落后|击败|小胜|大胜|险胜|惜败)')
@@ -63,13 +44,13 @@ _RANGE_UNITS_PATTERN = (
 )
 
 
-def _resolve_xtts_language(target_language: str) -> str:
-    key = str(target_language or '简体中文').strip().lower()
-    return _TARGET_TO_XTTS_LANG.get(key, 'zh-cn')
+def _resolve_xtts_language(target_language):
+    code = canonical_language(target_language)
+    return 'zh-cn' if code == 'zh' else code
 
 
 def _is_chinese_text_or_target(text: str, target_language: str = '简体中文') -> bool:
-    if str(target_language or '').strip() in {'简体中文', '繁体中文', 'zh', 'zh-cn'}:
+    if canonical_language(target_language) == 'zh':
         return True
     return any('\u4e00' <= ch <= '\u9fff' for ch in (text or ''))
 
@@ -180,9 +161,9 @@ def normalize_year_list_notation(text: str) -> str:
     return text
 
 
-def normalize_formation_notation(text: str) -> str:
+def normalize_formation_notation(text: str, style=None) -> str:
     # Football formations like 4-4-2 -> 四四二 (or configured style).
-    style = os.getenv('FORMATION_TTS_STYLE', FORMATION_TTS_STYLE)
+    style = style or FORMATION_TTS_STYLE
     pattern = r'(?<!\d)(\d{1,2}(?:\s*[-–—－]\s*\d{1,2}){2,3})(?!\d)'
 
     def _replace(match):
@@ -203,7 +184,7 @@ def normalize_formation_notation(text: str) -> str:
     return re.sub(pattern, _replace, text)
 
 
-def preprocess_text(text, target_language='简体中文', tts_engine='xtts'):
+def preprocess_text(text, target_language='简体中文', tts_engine='cosyvoice', formation_style=None):
     text = (text or '').strip()
     if not _has_speakable_content(text):
         return ''
@@ -222,20 +203,20 @@ def preprocess_text(text, target_language='简体中文', tts_engine='xtts'):
     parts = []
     cursor = 0
     for match in TECH_IDENTIFIER_RE.finditer(text):
-        parts.append(_preprocess_chinese_span(text[cursor:match.start()]))
+        parts.append(_preprocess_chinese_span(text[cursor:match.start()], formation_style))
         parts.append(normalizer(match.group()))
         cursor = match.end()
-    parts.append(_preprocess_chinese_span(text[cursor:]))
+    parts.append(_preprocess_chinese_span(text[cursor:], formation_style))
     return ''.join(parts).strip()
 
 
-def _preprocess_chinese_span(text):
+def _preprocess_chinese_span(text, formation_style=None):
     text = re.sub(r'(?<![A-Za-z0-9])AI(?![A-Za-z0-9])', '人工智能', text)
     text = normalize_name_connector_notation(text)
     text = normalize_iso_date_notation(text)
     text = normalize_year_list_notation(text)
     text = normalize_clock_time_notation(text)
-    text = normalize_formation_notation(text)
+    text = normalize_formation_notation(text, formation_style)
     text = normalize_range_notation(text)
     text = normalize_score_notation(text)
     text = re.sub(r'(?<!^)(?<!\d)([A-Z])', r' \1', text)
@@ -346,6 +327,7 @@ def _select_tts_func(
     speaker_prompts: dict[str, str],
     tts_device='auto',
     target_language='简体中文',
+    model_path=None,
 ):
     """Return a callable(text, output_path, speaker_wav, speaker_id) for the chosen engine."""
     if tts_engine == 'cosyvoice':
@@ -375,17 +357,16 @@ def _select_tts_func(
             speaker_wav,
             device=tts_device,
             language=xtts_lang,
+            model_name=model_path,
         )
 
     return _xtts
 
 
-def generate_wavs(folder, tts_engine=None, tts_device='auto', target_language='简体中文'):
-    if tts_engine is None:
-        tts_engine = 'xtts'
-    if tts_engine not in {'xtts', 'cosyvoice'}:
-        logger.warning(f'Unsupported tts_engine={tts_engine}, fallback to xtts.')
-        tts_engine = 'xtts'
+def generate_wavs(folder, tts_engine='cosyvoice', tts_device='auto', target_language='简体中文', model_path=None, formation_style=None):
+    if tts_engine not in {'cosyvoice', 'xtts'}:
+        raise ValueError(f'Unknown TTS engine: {tts_engine}')
+    formation_style = formation_style or FORMATION_TTS_STYLE
 
     source_translation_path = os.path.join(folder, 'translation.json')
     aligned_translation_path = os.path.join(folder, 'translation_tts.json')
@@ -408,7 +389,8 @@ def generate_wavs(folder, tts_engine=None, tts_device='auto', target_language='�
             'speaker_references': reference_fingerprint(folder),
             'text_normalization': normalization_identity(tts_engine),
             'target_language': target_language,
-            'formation_tts_style': os.getenv('FORMATION_TTS_STYLE', FORMATION_TTS_STYLE),
+            'formation_tts_style': formation_style,
+            'model_path': model_path,
             'segments': [
                 (line['speaker'], line.get('translation', ''))
                 for line in transcript
@@ -421,6 +403,7 @@ def generate_wavs(folder, tts_engine=None, tts_device='auto', target_language='�
         tts_engine,
         speaker_prompts,
         tts_device=tts_device,
+        model_path=model_path,
         target_language=target_language,
     )
 
@@ -430,7 +413,7 @@ def generate_wavs(folder, tts_engine=None, tts_device='auto', target_language='�
 
     for i, line in enumerate(transcript):
         speaker = line['speaker']
-        text = preprocess_text(line.get('translation', ''), target_language=target_language, tts_engine=tts_engine)
+        text = preprocess_text(line.get('translation', ''), target_language=target_language, tts_engine=tts_engine, formation_style=formation_style)
         output_path = os.path.join(output_folder, f'{str(i).zfill(4)}.wav')
         if not text:
             save_wav(np.zeros((int(0.1 * 24000),)), output_path)
@@ -527,8 +510,8 @@ if __name__ == '__main__':
     import sys
     if len(sys.argv) < 2:
         print(f"Usage: python {sys.argv[0]} <video_folder> [tts_engine]")
-        print("  tts_engine: xtts (default) | cosyvoice")
+        print("  tts_engine: cosyvoice (default) | xtts")
         sys.exit(1)
     folder = sys.argv[1]
-    engine = sys.argv[2] if len(sys.argv) > 2 else 'xtts'
+    engine = sys.argv[2] if len(sys.argv) > 2 else 'cosyvoice'
     generate_wavs(folder, tts_engine=engine)

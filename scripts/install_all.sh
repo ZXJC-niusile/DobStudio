@@ -18,57 +18,31 @@ command -v ffmpeg >/dev/null 2>&1 || {
   exit 1;
 }
 
-echo "[1/8] Ensure conda env: ${ENV_NAME} (python=${PY_VER})"
+echo "[1/5] Ensure conda env: ${ENV_NAME} (python=${PY_VER})"
 if conda env list | awk '{print $1}' | grep -qx "${ENV_NAME}"; then
   echo "Conda env exists: ${ENV_NAME}"
 else
   conda create -y -n "${ENV_NAME}" "python=${PY_VER}"
 fi
 
-echo "[2/8] Install CUDA PyTorch stack"
+echo "[2/5] Install CUDA PyTorch stack"
 conda run -n "${ENV_NAME}" pip install --upgrade pip setuptools wheel
 conda run -n "${ENV_NAME}" pip install --index-url "${CUDA_INDEX_URL}" torch torchvision torchaudio
 
-echo "[3/8] Install Optional Coqui TTS first (only when INSTALL_XTTS=1) to prevent downgrading modern deps"
+echo "[3/5] Install the selected runtime dependency graph"
+REQUIREMENTS_FILE="${REPO_ROOT}/requirements.txt"
+SMOKE_ARGS=()
 if [[ "${INSTALL_XTTS}" == "1" ]]; then
-  conda run -n "${ENV_NAME}" pip install TTS
-else
-  echo "Skipping optional Coqui TTS (set INSTALL_XTTS=1 to install XTTS v2 runtime)."
+  REQUIREMENTS_FILE="${REPO_ROOT}/requirements-xtts.txt"
+  SMOKE_ARGS+=(--xtts)
 fi
+conda run -n "${ENV_NAME}" pip install -r "${REQUIREMENTS_FILE}"
 
-echo "[4/8] Install OmniDub base dependencies"
-conda run -n "${ENV_NAME}" pip install -r "${REPO_ROOT}/requirements.txt"
+echo "[4/5] Check dependency consistency"
+conda run -n "${ENV_NAME}" pip check
 
-echo "[5/8] Install demucs (vocal separation)"
-conda run -n "${ENV_NAME}" pip install demucs
-
-echo "[6/8] Install WhisperX (speech recognition)"
-conda run -n "${ENV_NAME}" pip install git+https://github.com/m-bain/whisperx.git
-
-echo "[7/8] Install CosyVoice runtime dependencies"
-conda run -n "${ENV_NAME}" pip install -r "${REPO_ROOT}/CosyVoice/requirements.txt"
-conda run -n "${ENV_NAME}" pip install matcha-tts || {
-  echo "WARNING: pip install matcha-tts failed.";
-  echo "  CosyVoice requires the Matcha-TTS package for flow matching modules.";
-  echo "  Manual fallback: clone https://github.com/shivammehta25/Matcha-TTS.git";
-  echo "  into CosyVoice/third_party/Matcha-TTS/ (replacing the stub).";
-}
-
-echo "[8/8] Sanity check runtime imports"
-INSTALL_XTTS="${INSTALL_XTTS}" conda run -n "${ENV_NAME}" python - <<'PY'
-import importlib
-import os
-
-mods = [
-    "gradio", "loguru", "yt_dlp", "librosa", "dotenv", "openai", "audiostretchy",
-    "PIL", "demucs", "whisperx",
-]
-if os.getenv("INSTALL_XTTS") == "1":
-    mods.append("TTS")
-for m in mods:
-    importlib.import_module(m)
-print("Import check passed.")
-PY
+echo "[5/5] Check real engine imports and text frontend"
+conda run -n "${ENV_NAME}" python "${REPO_ROOT}/scripts/check_runtime.py" "${SMOKE_ARGS[@]}"
 
 echo ""
 echo "Install finished."

@@ -6,6 +6,7 @@ Unverified pairs can still be used as audio-only cross-lingual references.
 import hashlib
 import json
 import os
+from .config import canonical_language
 
 
 def audio_digest(path):
@@ -14,16 +15,6 @@ def audio_digest(path):
         for chunk in iter(lambda: f.read(65536), b''):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def canonical_language(language):
-    key = str(language or '').strip().lower()
-    return {
-        '简体中文': 'zh', '繁体中文': 'zh', 'zh-cn': 'zh', 'zh-tw': 'zh',
-        'zh-hans': 'zh', 'zh-hant': 'zh', 'chinese': 'zh',
-        'english': 'en', 'en-us': 'en', 'en-gb': 'en',
-        'japanese': 'ja', 'korean': 'ko',
-    }.get(key, key)
 
 
 def write_reference_metadata(wav_path, text, language):
@@ -65,3 +56,12 @@ def reference_fingerprint(folder):
         and not name.endswith('_30s.wav')
         and os.path.isfile(os.path.join(directory, name))
     }
+
+
+def has_speaker_wavs(folder):
+    directory = os.path.join(folder, "SPEAKER")
+    return os.path.isdir(directory) and any(
+        name.endswith(".wav") and os.path.isfile(os.path.join(directory, name))
+        and os.path.getsize(os.path.join(directory, name)) > 44
+        for name in os.listdir(directory)
+    )

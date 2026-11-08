@@ -8,3 +8,9 @@ python-dotenv
 openai
 audiostretchy
 Pillow
+
+# Complete default runtime. Torch is installed separately for the target device.
+-r CosyVoice/requirements.txt
+demucs
+whisperx @ git+https://github.com/m-bain/whisperX.git@5d3678b8535698a2826a5db9eb3e4105aef85dd9
+matcha-tts

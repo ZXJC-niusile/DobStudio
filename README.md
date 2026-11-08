@@ -14,7 +14,7 @@
 - **时间拉伸对齐**：TTS 输出按 0.82x-1.0x 拉伸匹配原始语速
 - **双语字幕**：生成 SRT 字幕并烧录至视频（自适应横屏 16:9 与竖屏 9:16 布局）
 - **多 GPU 调度**：支持 1-8 并行 worker，尊重 `CUDA_VISIBLE_DEVICES` 并自动选择最空闲 GPU
-- **断点续传**：参数与上游产物感知的 DAG 缓存指纹检查，崩溃或中途重跑后可精准恢复
+- **断点续传**：任务配置与上游产物感知的 DAG 缓存指纹检查，崩溃或中途重跑后可精准恢复
 
 ## 技术栈
 
@@ -48,11 +48,7 @@ bash scripts/install_all.sh
 # INSTALL_XTTS=1 bash scripts/install_all.sh
 ```
 
-安装脚本会自动完成：
-- 创建 conda 环境 `omnidub` (Python 3.10)
-- 安装 CUDA 12.8 版 PyTorch
-- 安装项目依赖 (demucs, whisperx, CosyVoice；当设置 `INSTALL_XTTS=1` 时额外先行安装 Coqui `TTS`)
-- 安装 Matcha-TTS (CosyVoice 的流匹配依赖)
+安装步骤、可选 XTTS 和真实依赖检查统一见 [部署指南](docs/ONE_CLICK_INSTALL.md)。
 
 ### 3. 配置环境变量
 
@@ -98,7 +94,7 @@ OmniDub/
 ├── requirements.txt                # 主依赖清单
 ├── .env.example                    # 环境变量模板
 ├── youdub/                         # 核心流水线
-│   ├── pipeline.py                 #   v2.0 主编排器
+│   ├── pipeline.py                 #   共用任务执行器
 │   ├── utils.py                    #   GPU 调度、缓存指纹、音频工具
 │   ├── cn_tx.py                    #   中文文本规范化
 │   ├── step000_video_downloader.py #   1. 下载视频
@@ -111,7 +107,7 @@ OmniDub/
 │   ├── step050_synthesize_video.py #   6. 视频合成
 │   └── step060_generate_info.py    #   7. 缩略图+摘要
 ├── CosyVoice/                      # CosyVoice TTS 引擎（内嵌源码）
-│   ├── cosyvoice/                  #   模型代码（仅保留运行时必需部分）
+│   ├── cosyvoice/                  #   模型代码（保留上游模型实现，未做大规模裁剪）
 │   ├── third_party/Matcha-TTS/     #   Matcha-TTS 依赖（见下方说明）
 │   └── requirements.txt            #   CosyVoice 运行时依赖
 ├── tests/                          # 回归单元测试套件
@@ -119,19 +115,9 @@ OmniDub/
 └── scripts/install_all.sh          # 一键安装脚本
 ```
 
-## 关于 Matcha-TTS 依赖
+## 组件复用与依赖
 
-CosyVoice 的流匹配模块 (`flow_matching.py`, `decoder.py`) 依赖 [Matcha-TTS](https://github.com/shivammehta25/Matcha-TTS) 包。
-
-`install_all.sh` 会尝试通过 `pip install matcha-tts` 安装。如果安装失败（预编译 wheel 仅支持 Linux / Python 3.10），可以手动操作：
-
-```bash
-cd CosyVoice/third_party/Matcha-TTS
-rm -rf matcha  # 删除占位 stub
-git clone https://github.com/shivammehta25/Matcha-TTS.git .
-```
-
-项目代码中的 `sys.path` 检测会自动加载本地克隆的 Matcha-TTS。
+结构化调用方式见 [核心接口](docs/CORE_API.md)。Matcha-TTS 作为安装依赖管理，安装失败会中止；不再使用空 stub 或伪子模块。
 
 ## TTS 引擎说明
 

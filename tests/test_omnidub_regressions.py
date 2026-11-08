@@ -7,6 +7,7 @@ import json
 import os
 import py_compile
 import sys
+import subprocess
 import tempfile
 import time
 import types
@@ -170,6 +171,10 @@ def _install_stub_modules_if_missing() -> None:
 
 
 _install_stub_modules_if_missing()
+from youdub import step010_demucs_vr as separation, step020_whisperx as recognition
+from youdub import step030_translation as translation, step040_tts as synthesis
+from youdub import step050_synthesize_video as video, step060_generate_info as metadata
+from youdub.config import validate_engine_and_language, TranslationConfig
 
 
 def _read_wav_int16(path: str) -> tuple[int, np.ndarray]:
@@ -184,7 +189,7 @@ class OmniDubRegressionTests(unittest.TestCase):
     def test_01_compile_all_python_files_and_shell_script_hygiene(self):
         compiled = 0
         for root, dirs, files in os.walk(REPO_ROOT):
-            dirs[:] = [d for d in dirs if d not in {'.git', '__pycache__', '.venv', 'venv'}]
+            dirs[:] = [d for d in dirs if d not in {'.git', '__pycache__', '.venv', 'venv', '.worktrees'}]
             for fn in files:
                 if fn.endswith('.py'):
                     py_compile.compile(os.path.join(root, fn), doraise=True)
@@ -261,13 +266,13 @@ class OmniDubRegressionTests(unittest.TestCase):
                     f.write('Demo\n\n摘要')
 
             cfg = pipeline.PipelineConfig(root_folder=tmp)
-            with mock.patch.object(pipeline, 'extract_audio_from_video', side_effect=_fake_extract), \
-                 mock.patch.object(pipeline, 'separate_audio', side_effect=_fake_separate), \
-                 mock.patch.object(pipeline, 'transcribe_audio', side_effect=_fake_transcribe), \
-                 mock.patch.object(pipeline, 'translate', side_effect=_fake_translate), \
-                 mock.patch.object(pipeline, 'generate_wavs', side_effect=_fake_tts), \
-                 mock.patch.object(pipeline, 'synthesize_video', side_effect=_fake_synth), \
-                 mock.patch.object(pipeline, 'generate_info', side_effect=_fake_info):
+            with mock.patch.object(separation, 'extract_audio_from_video', side_effect=_fake_extract), \
+                 mock.patch.object(separation, 'separate_audio', side_effect=_fake_separate), \
+                 mock.patch.object(recognition, 'transcribe_audio', side_effect=_fake_transcribe), \
+                 mock.patch.object(translation, 'translate', side_effect=_fake_translate), \
+                 mock.patch.object(synthesis, 'generate_wavs', side_effect=_fake_tts), \
+                 mock.patch.object(video, 'synthesize_video', side_effect=_fake_synth), \
+                 mock.patch.object(metadata, 'generate_info', side_effect=_fake_info):
 
                 # Run 1: all 6 steps execute
                 pipeline._run_pipeline(tmp, cfg)
@@ -305,8 +310,8 @@ class OmniDubRegressionTests(unittest.TestCase):
                             f,
                         )
 
-                with mock.patch.object(pipeline, 'translate', side_effect=_fake_translate_v2), \
-                     mock.patch.object(pipeline, 'generate_wavs', side_effect=_fake_tts_v2):
+                with mock.patch.object(translation, 'translate', side_effect=_fake_translate_v2), \
+                     mock.patch.object(synthesis, 'generate_wavs', side_effect=_fake_tts_v2):
                     pipeline._run_pipeline(tmp, cfg)
 
                 self.assertEqual(calls, ['s3_translate_v2', 's4_tts_v2', 's5_synth', 's6_info'])
@@ -466,30 +471,30 @@ class OmniDubRegressionTests(unittest.TestCase):
         from youdub import step040_tts as st_tts
 
         self.assertEqual(
-            st_tts.preprocess_text('2024-05-01晚上20:30直播', '简体中文'),
+            st_tts.preprocess_text('2024-05-01晚上20:30直播', '简体中文', tts_engine='xtts'),
             '二零二四年五月一日晚上二十点三十分直播',
         )
         self.assertEqual(
-            st_tts.preprocess_text('北京时间08:00开球', '简体中文'),
+            st_tts.preprocess_text('北京时间08:00开球', '简体中文', tts_engine='xtts'),
             '北京时间八点整开球',
         )
         self.assertEqual(
-            st_tts.preprocess_text('只需3-5分钟，适合18-25岁人群', '简体中文'),
+            st_tts.preprocess_text('只需3-5分钟，适合18-25岁人群', '简体中文', tts_engine='xtts'),
             '只需三到五分钟，适合十八到二十五岁人群',
         )
         self.assertEqual(
-            st_tts.preprocess_text('比赛第10-15分钟', '简体中文'),
+            st_tts.preprocess_text('比赛第10-15分钟', '简体中文', tts_engine='xtts'),
             '比赛第十到十五分钟',
         )
         self.assertEqual(
-            st_tts.preprocess_text('他是00后球员', '简体中文'),
+            st_tts.preprocess_text('他是00后球员', '简体中文', tts_engine='xtts'),
             '他是零零后球员',
         )
-        tactical = st_tts.preprocess_text('他们踢4-4-2阵型，最终以2-1获胜', '简体中文')
+        tactical = st_tts.preprocess_text('他们踢4-4-2阵型，最终以2-1获胜', '简体中文', tts_engine='xtts')
         self.assertIn('四四二', tactical)
         self.assertIn('二比一', tactical)
-        self.assertEqual(st_tts.preprocess_text('...', '简体中文'), '')
-        self.assertEqual(st_tts.preprocess_text('（音乐）', '简体中文'), '')
+        self.assertEqual(st_tts.preprocess_text('...', '简体中文', tts_engine='xtts'), '')
+        self.assertEqual(st_tts.preprocess_text('（音乐）', '简体中文', tts_engine='xtts'), '')
 
     def test_07_subtitle_wrapping_zero_char_loss_and_portrait_video_layout(self):
         from youdub import step050_synthesize_video as syn
@@ -684,7 +689,7 @@ class OmniDubRegressionTests(unittest.TestCase):
                 with open(dst, 'wb') as wf:
                     wf.write(b'REMUXED_MP4')
 
-            with mock.patch.object(pipeline.subprocess, 'run', side_effect=_fake_ffmpeg) as m_run:
+            with mock.patch.object(subprocess, 'run', side_effect=_fake_ffmpeg) as m_run:
                 folder_mkv = pipeline._prepare_local_video_folder(vid_mkv, out_root)
                 self.assertEqual(m_run.call_count, 1)
                 with open(os.path.join(folder_mkv, 'download.mp4'), 'rb') as rf:
@@ -889,11 +894,11 @@ class OmniDubRegressionTests(unittest.TestCase):
 
         # Pipeline-level validation
         with self.assertRaises(ValueError):
-            pipeline._validate_engine_and_language('xtts', '简体中文', xtts_cpml_ack=False)
+            validate_engine_and_language('xtts', '简体中文', xtts_cpml_ack=False)
         with self.assertRaises(ValueError):
-            pipeline._validate_engine_and_language('cosyvoice', 'Deutsch', xtts_cpml_ack=False)
-        pipeline._validate_engine_and_language('cosyvoice', '简体中文', xtts_cpml_ack=False)
-        pipeline._validate_engine_and_language('xtts', 'Deutsch', xtts_cpml_ack=True)
+            validate_engine_and_language('cosyvoice', 'Deutsch', xtts_cpml_ack=False)
+        validate_engine_and_language('cosyvoice', '简体中文', xtts_cpml_ack=False)
+        validate_engine_and_language('xtts', 'Deutsch', xtts_cpml_ack=True)
 
         # Gradio UI gate: test exact 11 positional args (Online) & 9 positional args (Local) + kwargs
         seen_online = []
@@ -996,7 +1001,7 @@ class OmniDubRegressionTests(unittest.TestCase):
         self.assertIn('voiceover', en_sys.lower())
 
         # extra_body is None by default for strict OpenAI / Azure API gateway compatibility
-        self.assertIsNone(tr.extra_body)
+        self.assertIsNone(TranslationConfig().extra_body)
 
 
     def test_17_local_source_equal_to_destination_is_preserved(self):
@@ -1136,10 +1141,10 @@ class OmniDubRegressionTests(unittest.TestCase):
     def test_23_tts_preserves_identifiers_through_all_preprocessing(self):
         from youdub.step040_tts import preprocess_text
 
-        self.assertEqual(preprocess_text('使用GPT-4和A100，版本v1.02，误差0.05'),
+        self.assertEqual(preprocess_text('使用GPT-4和A100，版本v1.02，误差0.05', tts_engine='xtts'),
                          '使用GPT-4和A100，版本v1.02，误差零点零五')
-        self.assertEqual(preprocess_text('连接P2P网络'), '连接P2P网络')
-        self.assertEqual(preprocess_text('ID005，误差1.2E-3'), 'ID零零五，误差一点二乘以十的负三次方')
+        self.assertEqual(preprocess_text('连接P2P网络', tts_engine='xtts'), '连接P2P网络')
+        self.assertEqual(preprocess_text('ID005，误差1.2E-3', tts_engine='xtts'), 'ID零零五，误差一点二乘以十的负三次方')
 
     def test_24_prompt_provenance_language_and_audio_integrity(self):
         from youdub import step020_whisperx as wx, step040_tts as tts, pipeline

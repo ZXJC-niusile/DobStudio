@@ -1,4 +1,4 @@
-from contextlib import contextmanager
+from .runtime import legacy_torch_load
 import importlib
 import json
 import math
@@ -7,7 +7,6 @@ import pickle
 import threading
 import time
 
-from dotenv import load_dotenv
 import librosa
 from loguru import logger
 import numpy as np
@@ -16,8 +15,8 @@ import whisperx
 
 from .utils import resolve_torch_device, save_wav
 from .speaker_reference import write_reference_metadata
+from .config import canonical_language
 
-load_dotenv()
 
 _whisper_models = {}
 _align_models = {}
@@ -25,30 +24,12 @@ _diarize_models = {}
 _whisper_load_locks = {}
 _align_load_locks = {}
 _diarize_load_locks = {}
+_UNSET = object()
 _registry_lock = threading.RLock()
 _infer_locks = {}
 _align_locks = {}
 _diarize_locks = {}
-_torch_load_lock = threading.Lock()
-_ALIGN_FALLBACK_LANGUAGE = os.getenv('WHISPERX_ALIGN_FALLBACK_LANGUAGE', 'en')
 
-
-@contextmanager
-def _pyannote_torch_load_compat():
-    """Scoped fallback for pyannote/lightning checkpoints on PyTorch >= 2.6.
-    Uses setdefault so explicit weights_only=True calls remain intact."""
-    with _torch_load_lock:
-        original_torch_load = torch.load
-
-        def _patched_torch_load(*args, **kwargs):
-            kwargs.setdefault('weights_only', False)
-            return original_torch_load(*args, **kwargs)
-
-        torch.load = _patched_torch_load
-        try:
-            yield
-        finally:
-            torch.load = original_torch_load
 
 
 def _get_registry_lock():
@@ -106,26 +87,9 @@ def _normalize_source_language(source_language):
     src = str(source_language).strip().lower()
     if not src or src in {'auto', 'none'}:
         return None
-    aliases = {
-        'english': 'en',
-        'en-us': 'en',
-        'en-gb': 'en',
-        'chinese': 'zh',
-        'zh-cn': 'zh',
-        'zh-hans': 'zh',
-    }
-    return aliases.get(src, src)
+    return canonical_language(src)
 
 
-def init_whisperx(
-    model_name: str = 'large-v3',
-    download_root: str = 'models/ASR/whisper',
-    device: str = 'auto',
-    diarization: bool = True,
-):
-    load_whisper_model(model_name=model_name, download_root=download_root, device=device)
-    if diarization:
-        load_diarize_model(device=device)
 
 
 def load_whisper_model(model_name: str = 'large-v3', download_root='models/ASR/whisper', device='auto'):
@@ -184,7 +148,7 @@ def load_align_model(language='en', device='auto'):
                 language_code=language, device=device_key
             )
         except pickle.UnpicklingError:
-            with _pyannote_torch_load_compat():
+            with legacy_torch_load():
                 align_model, align_metadata = whisperx.load_align_model(
                     language_code=language, device=device_key
                 )
@@ -203,11 +167,14 @@ def _instantiate_diarize_pipeline(diarization_pipeline_cls, hf_token: str, init_
         return diarization_pipeline_cls(use_auth_token=hf_token, **init_kwargs)
 
 
-def load_diarize_model(device='auto'):
+def load_diarize_model(device='auto', model_name=_UNSET, hf_token=_UNSET):
     if not _supports_diarization_pipeline():
         logger.warning('Current whisperx version does not support DiarizationPipeline, diarization disabled.')
         return None
-    hf_token = _get_hf_token()
+    if hf_token is _UNSET:
+        hf_token = _get_hf_token()
+    if model_name is _UNSET:
+        model_name = _get_diarization_model_name()
     if not hf_token:
         logger.warning('HF_TOKEN/HUGGINGFACE_TOKEN is missing, diarization disabled.')
         return None
@@ -216,7 +183,7 @@ def load_diarize_model(device='auto'):
         logger.warning('Cannot import whisperx diarization pipeline, diarization disabled.')
         return None
     _, _, device_key = _resolve_whisperx_device(device)
-    key = device_key
+    key = (device_key, model_name)
     lock = _get_registry_lock()
     with lock:
         existing = _diarize_models.get(key)
@@ -230,7 +197,6 @@ def load_diarize_model(device='auto'):
             if existing is not None:
                 return existing
         t_start = time.time()
-        model_name = _get_diarization_model_name()
         init_kwargs = {'device': device_key}
         if model_name:
             init_kwargs['model_name'] = model_name
@@ -239,7 +205,7 @@ def load_diarize_model(device='auto'):
                 diarize_model = _instantiate_diarize_pipeline(diarization_pipeline_cls, hf_token, init_kwargs)
             except pickle.UnpicklingError:
                 logger.info('Retrying pyannote diarization load with PyTorch 2.6+ compatibility mode...')
-                with _pyannote_torch_load_compat():
+                with legacy_torch_load():
                     diarize_model = _instantiate_diarize_pipeline(diarization_pipeline_cls, hf_token, init_kwargs)
         except Exception as e:
             logger.exception(
@@ -339,16 +305,6 @@ def merge_segments(transcript, max_gap=0.5):
     return merged_transcription
 
 
-def _has_valid_speaker_wavs(folder: str) -> bool:
-    spk_dir = os.path.join(folder, 'SPEAKER')
-    if not os.path.isdir(spk_dir):
-        return False
-    return any(
-        fn.endswith('.wav') and os.path.getsize(os.path.join(spk_dir, fn)) > 44
-        for fn in os.listdir(spk_dir)
-    )
-
-
 def transcribe_audio(
     folder,
     model_name: str = 'large',
@@ -359,16 +315,11 @@ def transcribe_audio(
     min_speakers=None,
     max_speakers=None,
     source_language='auto',
+    align_fallback='en',
+    diarization_model=None,
+    hf_token=None,
 ):
     transcript_path = os.path.join(folder, 'transcript.json')
-    if (
-        os.path.isfile(transcript_path)
-        and os.path.getsize(transcript_path) > 2
-        and _has_valid_speaker_wavs(folder)
-    ):
-        logger.info(f'Transcript already exists in {folder}')
-        return True
-
     wav_path = os.path.join(folder, 'audio_vocals.wav')
     if not os.path.exists(wav_path):
         raise FileNotFoundError(f'Vocals wav not found for transcription: {wav_path}')
@@ -426,7 +377,7 @@ def transcribe_audio(
     except Exception:
         if forced_language:
             raise
-        fallback_lang = _normalize_source_language(_ALIGN_FALLBACK_LANGUAGE) or 'en'
+        fallback_lang = _normalize_source_language(align_fallback) or 'en'
         logger.warning(
             f'No default align model for "{align_language}", retry transcription with fallback language "{fallback_lang}".'
         )
@@ -447,9 +398,9 @@ def transcribe_audio(
         )
 
     if diarization:
-        diarize_model = load_diarize_model(active_device_key)
+        diarize_model = load_diarize_model(active_device_key, model_name=diarization_model, hf_token=hf_token)
         if diarize_model is not None:
-            diarize_lock = _diarize_locks.setdefault(active_device_key, threading.Lock())
+            diarize_lock = _diarize_locks.setdefault((active_device_key, diarization_model), threading.Lock())
             with diarize_lock:
                 diarize_segments = diarize_model(
                     wav_path, min_speakers=min_speakers, max_speakers=max_speakers

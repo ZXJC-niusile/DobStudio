@@ -9,11 +9,8 @@
 #   - python 3.X
 # notes: python 2.X WILL fail or produce misleading results
 
-import sys
-import argparse
 import string
 import re
-import csv
 
 # ================================================================================ #
 #                                    basic constant
@@ -549,91 +546,6 @@ def create_system(numbering_type=NUMBERING_TYPES[1]):
     return system
 
 
-def chn2num(chinese_string, numbering_type=NUMBERING_TYPES[1]):
-
-    def get_symbol(char, system):
-        for u in system.units:
-            if char in [u.traditional, u.simplified, u.big_s, u.big_t]:
-                return u
-        for d in system.digits:
-            if char in [d.traditional, d.simplified, d.big_s, d.big_t, d.alt_s, d.alt_t]:
-                return d
-        for m in system.math:
-            if char in [m.traditional, m.simplified]:
-                return m
-
-    def string2symbols(chinese_string, system):
-        int_string, dec_string = chinese_string, ''
-        for p in [system.math.point.simplified, system.math.point.traditional]:
-            if p in chinese_string:
-                int_string, dec_string = chinese_string.split(p)
-                break
-        return [get_symbol(c, system) for c in int_string], \
-               [get_symbol(c, system) for c in dec_string]
-
-    def correct_symbols(integer_symbols, system):
-        """
-        一百八 to 一百八十
-        一亿一千三百万 to 一亿 一千万 三百万
-        """
-
-        if integer_symbols and isinstance(integer_symbols[0], CNU):
-            if integer_symbols[0].power == 1:
-                integer_symbols = [system.digits[1]] + integer_symbols
-
-        if len(integer_symbols) > 1:
-            if isinstance(integer_symbols[-1], CND) and isinstance(integer_symbols[-2], CNU):
-                integer_symbols.append(
-                    CNU(integer_symbols[-2].power - 1, None, None, None, None))
-
-        result = []
-        unit_count = 0
-        for s in integer_symbols:
-            if isinstance(s, CND):
-                result.append(s)
-                unit_count = 0
-            elif isinstance(s, CNU):
-                current_unit = CNU(s.power, None, None, None, None)
-                unit_count += 1
-
-            if unit_count == 1:
-                result.append(current_unit)
-            elif unit_count > 1:
-                for i in range(len(result)):
-                    if isinstance(result[-i - 1], CNU) and result[-i - 1].power < current_unit.power:
-                        result[-i - 1] = CNU(result[-i - 1].power +
-                                             current_unit.power, None, None, None, None)
-        return result
-
-    def compute_value(integer_symbols):
-        """
-        Compute the value.
-        When current unit is larger than previous unit, current unit * all previous units will be used as all previous units.
-        e.g. '两千万' = 2000 * 10000 not 2000 + 10000
-        """
-        value = [0]
-        last_power = 0
-        for s in integer_symbols:
-            if isinstance(s, CND):
-                value[-1] = s.value
-            elif isinstance(s, CNU):
-                value[-1] *= pow(10, s.power)
-                if s.power > last_power:
-                    value[:-1] = list(map(lambda v: v *
-                                          pow(10, s.power), value[:-1]))
-                    last_power = s.power
-                value.append(0)
-        return sum(value)
-
-    system = create_system(numbering_type)
-    int_part, dec_part = string2symbols(chinese_string, system)
-    int_part = correct_symbols(int_part, system)
-    int_str = str(compute_value(int_part))
-    dec_str = ''.join([str(d.value) for d in dec_part])
-    if dec_part:
-        return '{0}.{1}'.format(int_str, dec_str)
-    else:
-        return int_str
 
 
 def num2chn(number_string, numbering_type=NUMBERING_TYPES[1], big=False,
@@ -747,8 +659,6 @@ class Cardinal:
         self.cardinal = cardinal
         self.chntext = chntext
 
-    def chntext2cardinal(self):
-        return chn2num(self.chntext)
 
     def cardinal2chntext(self):
         return num2chn(self.cardinal)
@@ -803,9 +713,6 @@ class Fraction:
         self.fraction = fraction
         self.chntext = chntext
 
-    def chntext2fraction(self):
-        denominator, numerator = self.chntext.split('分之')
-        return chn2num(numerator) + '/' + chn2num(denominator)
 
     def fraction2chntext(self):
         numerator, denominator = self.fraction.split('/')
@@ -846,41 +753,8 @@ class Date:
         return self.chntext
 
 
-class Money:
-    """
-    MONEY类
-    """
-
-    def __init__(self, money=None, chntext=None):
-        self.money = money
-        self.chntext = chntext
-
-    def money2chntext(self):
-        money = self.money
-        pattern = re.compile(r'(\d+(\.\d+)?)')
-        matchers = pattern.findall(money)
-        if matchers:
-            for matcher in matchers:
-                money = money.replace(matcher[0], Cardinal(
-                    cardinal=matcher[0]).cardinal2chntext())
-        self.chntext = money
-        return self.chntext
 
 
-class Percentage:
-    """
-    PERCENTAGE类
-    """
-
-    def __init__(self, percentage=None, chntext=None):
-        self.percentage = percentage
-        self.chntext = chntext
-
-    def chntext2percentage(self):
-        return chn2num(self.chntext.strip().strip('百分之')) + '%'
-
-    def percentage2chntext(self):
-        return '百分之' + num2chn(self.percentage.strip().strip('%'))
 
 
 # Lex the original input once. Replacements are never scanned by another rule.

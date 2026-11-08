@@ -1,4 +1,4 @@
-from contextlib import contextmanager
+from .runtime import legacy_torch_load
 import importlib
 import os
 import pickle
@@ -24,30 +24,7 @@ _models = {}
 _tts_locks = {}
 _load_locks = {}
 _models_lock = threading.Lock()
-_torch_load_lock = threading.Lock()
-_cpu_model = None
-_cpu_lock = threading.Lock()
 
-
-@contextmanager
-def _torch_load_weights_compat():
-    """
-    Fallback for legacy XTTS checkpoints that cannot be loaded with
-    weights_only=True even after allowlisting config classes.
-    Uses setdefault so explicit weights_only=True calls remain protected.
-    """
-    with _torch_load_lock:
-        original_torch_load = torch.load
-
-        def _patched_torch_load(*args, **kwargs):
-            kwargs.setdefault("weights_only", False)
-            return original_torch_load(*args, **kwargs)
-
-        torch.load = _patched_torch_load
-        try:
-            yield
-        finally:
-            torch.load = original_torch_load
 
 
 def _allowlist_unsupported_global_from_error(error_message: str) -> bool:
@@ -93,12 +70,10 @@ def _instantiate_xtts(model_path: str, device: str):
                     "falling back to scoped weights_only=False load."
                 )
                 break
-    with _torch_load_weights_compat():
+    with legacy_torch_load():
         return TTS(model_path).to(device)
 
 
-def init_TTS(device='auto'):
-    return load_model(device=device)
 
 
 def load_model(model_path=None, device='auto'):
@@ -112,23 +87,25 @@ def load_model(model_path=None, device='auto'):
             _XTTS_LOCAL_PATH_ENV,
         )
         return None
+    model_path = os.path.normcase(os.path.abspath(os.path.expanduser(model_path)))
+    cache_key = (model_path, device)
     with _models_lock:
-        existing = _models.get(device)
+        existing = _models.get(cache_key)
         if existing is not None:
             return existing
         _tts_locks.setdefault(device, threading.Lock())
-        dev_load_lock = _load_locks.setdefault(device, threading.Lock())
+        dev_load_lock = _load_locks.setdefault(cache_key, threading.Lock())
 
     with dev_load_lock:
         with _models_lock:
-            existing = _models.get(device)
+            existing = _models.get(cache_key)
             if existing is not None:
                 return existing
         logger.info(f'Loading TTS model from {model_path} on {device}')
         t_start = time.time()
         loaded = _instantiate_xtts(model_path, device)
         with _models_lock:
-            _models[device] = loaded
+            _models[cache_key] = loaded
         t_end = time.time()
         logger.info(f'TTS model loaded on {device} in {t_end - t_start:.2f}s')
         return loaded
@@ -144,21 +121,6 @@ def _is_cuda_runtime_error(error: Exception) -> bool:
         'cudnn',
     ]
     return any(marker in msg for marker in cuda_markers)
-
-
-def _get_cpu_model(model_name=None):
-    global _cpu_model
-    if model_name is None:
-        model_name = os.getenv(_XTTS_LOCAL_PATH_ENV)
-    if not model_name:
-        raise RuntimeError(
-            "XTTS v2 CPU fallback unavailable: no model configured. "
-            f"Set env {_XTTS_LOCAL_PATH_ENV} or pass model_name explicitly."
-        )
-    if _cpu_model is None:
-        logger.warning('Initializing XTTS CPU fallback model...')
-        _cpu_model = _instantiate_xtts(model_name, 'cpu')
-    return _cpu_model
 
 
 def tts(text, output_path, speaker_wav, model_name=None, device='auto', language='zh-cn', overwrite=False):
@@ -202,8 +164,8 @@ def tts(text, output_path, speaker_wav, model_name=None, device='auto', language
             if _is_cuda_runtime_error(e):
                 logger.warning('XTTS CUDA runtime error detected, retrying on CPU fallback...')
                 try:
-                    with _cpu_lock:
-                        cpu_model = _get_cpu_model(model_name)
+                    cpu_model = load_model(model_name, 'cpu')
+                    with _tts_locks['cpu']:
                         wav = cpu_model.tts(text_clean, speaker_wav=speaker_wav, language=language)
                     wav = np.array(wav)
                     save_wav(wav, output_path)
