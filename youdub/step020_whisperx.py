@@ -1,12 +1,12 @@
-from contextlib import contextmanager
+from .runtime import legacy_torch_load
 import importlib
 import json
+import math
 import os
 import pickle
 import threading
 import time
 
-from dotenv import load_dotenv
 import librosa
 from loguru import logger
 import numpy as np
@@ -14,8 +14,9 @@ import torch
 import whisperx
 
 from .utils import resolve_torch_device, save_wav
+from .speaker_reference import write_reference_metadata
+from .config import canonical_language
 
-load_dotenv()
 
 _whisper_models = {}
 _align_models = {}
@@ -23,30 +24,12 @@ _diarize_models = {}
 _whisper_load_locks = {}
 _align_load_locks = {}
 _diarize_load_locks = {}
+_UNSET = object()
 _registry_lock = threading.RLock()
 _infer_locks = {}
 _align_locks = {}
 _diarize_locks = {}
-_torch_load_lock = threading.Lock()
-_ALIGN_FALLBACK_LANGUAGE = os.getenv('WHISPERX_ALIGN_FALLBACK_LANGUAGE', 'en')
 
-
-@contextmanager
-def _pyannote_torch_load_compat():
-    """Scoped fallback for pyannote/lightning checkpoints on PyTorch >= 2.6.
-    Uses setdefault so explicit weights_only=True calls remain intact."""
-    with _torch_load_lock:
-        original_torch_load = torch.load
-
-        def _patched_torch_load(*args, **kwargs):
-            kwargs.setdefault('weights_only', False)
-            return original_torch_load(*args, **kwargs)
-
-        torch.load = _patched_torch_load
-        try:
-            yield
-        finally:
-            torch.load = original_torch_load
 
 
 def _get_registry_lock():
@@ -104,26 +87,9 @@ def _normalize_source_language(source_language):
     src = str(source_language).strip().lower()
     if not src or src in {'auto', 'none'}:
         return None
-    aliases = {
-        'english': 'en',
-        'en-us': 'en',
-        'en-gb': 'en',
-        'chinese': 'zh',
-        'zh-cn': 'zh',
-        'zh-hans': 'zh',
-    }
-    return aliases.get(src, src)
+    return canonical_language(src)
 
 
-def init_whisperx(
-    model_name: str = 'large-v3',
-    download_root: str = 'models/ASR/whisper',
-    device: str = 'auto',
-    diarization: bool = True,
-):
-    load_whisper_model(model_name=model_name, download_root=download_root, device=device)
-    if diarization:
-        load_diarize_model(device=device)
 
 
 def load_whisper_model(model_name: str = 'large-v3', download_root='models/ASR/whisper', device='auto'):
@@ -182,7 +148,7 @@ def load_align_model(language='en', device='auto'):
                 language_code=language, device=device_key
             )
         except pickle.UnpicklingError:
-            with _pyannote_torch_load_compat():
+            with legacy_torch_load():
                 align_model, align_metadata = whisperx.load_align_model(
                     language_code=language, device=device_key
                 )
@@ -201,11 +167,14 @@ def _instantiate_diarize_pipeline(diarization_pipeline_cls, hf_token: str, init_
         return diarization_pipeline_cls(use_auth_token=hf_token, **init_kwargs)
 
 
-def load_diarize_model(device='auto'):
+def load_diarize_model(device='auto', model_name=_UNSET, hf_token=_UNSET):
     if not _supports_diarization_pipeline():
         logger.warning('Current whisperx version does not support DiarizationPipeline, diarization disabled.')
         return None
-    hf_token = _get_hf_token()
+    if hf_token is _UNSET:
+        hf_token = _get_hf_token()
+    if model_name is _UNSET:
+        model_name = _get_diarization_model_name()
     if not hf_token:
         logger.warning('HF_TOKEN/HUGGINGFACE_TOKEN is missing, diarization disabled.')
         return None
@@ -214,7 +183,7 @@ def load_diarize_model(device='auto'):
         logger.warning('Cannot import whisperx diarization pipeline, diarization disabled.')
         return None
     _, _, device_key = _resolve_whisperx_device(device)
-    key = device_key
+    key = (device_key, model_name)
     lock = _get_registry_lock()
     with lock:
         existing = _diarize_models.get(key)
@@ -228,7 +197,6 @@ def load_diarize_model(device='auto'):
             if existing is not None:
                 return existing
         t_start = time.time()
-        model_name = _get_diarization_model_name()
         init_kwargs = {'device': device_key}
         if model_name:
             init_kwargs['model_name'] = model_name
@@ -237,7 +205,7 @@ def load_diarize_model(device='auto'):
                 diarize_model = _instantiate_diarize_pipeline(diarization_pipeline_cls, hf_token, init_kwargs)
             except pickle.UnpicklingError:
                 logger.info('Retrying pyannote diarization load with PyTorch 2.6+ compatibility mode...')
-                with _pyannote_torch_load_compat():
+                with legacy_torch_load():
                     diarize_model = _instantiate_diarize_pipeline(diarization_pipeline_cls, hf_token, init_kwargs)
         except Exception as e:
             logger.exception(
@@ -272,6 +240,11 @@ def _sanitize_aligned_segments(raw_segments: list[dict]) -> list[dict]:
             continue
         start = seg.get('start')
         end = seg.get('end')
+        reliable = (
+            start is not None and end is not None
+            and math.isfinite(float(start)) and math.isfinite(float(end))
+            and 0 <= float(start) < float(end)
+        )
         if start is None or end is None:
             words = [w for w in (seg.get('words') or []) if isinstance(w, dict)]
             word_starts = [float(w['start']) for w in words if w.get('start') is not None]
@@ -296,6 +269,7 @@ def _sanitize_aligned_segments(raw_segments: list[dict]) -> list[dict]:
             'end': round(end_f, 3),
             'text': text,
             'speaker': seg.get('speaker') or 'SPEAKER_00',
+            'timing_reliable': reliable,
         })
     return sanitized
 
@@ -321,21 +295,14 @@ def merge_segments(transcript, max_gap=0.5):
             spacer = '' if current.get('text', '').endswith(' ') else ' '
             current['text'] = f"{current.get('text', '')}{spacer}{(segment.get('text') or '').strip()}".strip()
             current['end'] = max(float(current['end']), float(segment['end']))
+            current['timing_reliable'] = (
+                current.get('timing_reliable', False) and segment.get('timing_reliable', False)
+            )
         else:
             entry = dict(segment)
             entry['speaker'] = seg_speaker
             merged_transcription.append(entry)
     return merged_transcription
-
-
-def _has_valid_speaker_wavs(folder: str) -> bool:
-    spk_dir = os.path.join(folder, 'SPEAKER')
-    if not os.path.isdir(spk_dir):
-        return False
-    return any(
-        fn.endswith('.wav') and os.path.getsize(os.path.join(spk_dir, fn)) > 44
-        for fn in os.listdir(spk_dir)
-    )
 
 
 def transcribe_audio(
@@ -348,16 +315,11 @@ def transcribe_audio(
     min_speakers=None,
     max_speakers=None,
     source_language='auto',
+    align_fallback='en',
+    diarization_model=None,
+    hf_token=None,
 ):
     transcript_path = os.path.join(folder, 'transcript.json')
-    if (
-        os.path.isfile(transcript_path)
-        and os.path.getsize(transcript_path) > 2
-        and _has_valid_speaker_wavs(folder)
-    ):
-        logger.info(f'Transcript already exists in {folder}')
-        return True
-
     wav_path = os.path.join(folder, 'audio_vocals.wav')
     if not os.path.exists(wav_path):
         raise FileNotFoundError(f'Vocals wav not found for transcription: {wav_path}')
@@ -415,7 +377,7 @@ def transcribe_audio(
     except Exception:
         if forced_language:
             raise
-        fallback_lang = _normalize_source_language(_ALIGN_FALLBACK_LANGUAGE) or 'en'
+        fallback_lang = _normalize_source_language(align_fallback) or 'en'
         logger.warning(
             f'No default align model for "{align_language}", retry transcription with fallback language "{fallback_lang}".'
         )
@@ -436,9 +398,9 @@ def transcribe_audio(
         )
 
     if diarization:
-        diarize_model = load_diarize_model(active_device_key)
+        diarize_model = load_diarize_model(active_device_key, model_name=diarization_model, hf_token=hf_token)
         if diarize_model is not None:
-            diarize_lock = _diarize_locks.setdefault(active_device_key, threading.Lock())
+            diarize_lock = _diarize_locks.setdefault((active_device_key, diarization_model), threading.Lock())
             with diarize_lock:
                 diarize_segments = diarize_model(
                     wav_path, min_speakers=min_speakers, max_speakers=max_speakers
@@ -458,15 +420,16 @@ def transcribe_audio(
     with open(transcript_path, 'w', encoding='utf-8') as f:
         json.dump(transcript, f, indent=4, ensure_ascii=False)
     logger.info(f'Transcribed {wav_path} successfully, and saved to {transcript_path}')
-    generate_speaker_audio(folder, transcript)
+    generate_speaker_audio(folder, transcript, language=align_language)
     return True
 
 
-def generate_speaker_audio(folder, transcript):
+def generate_speaker_audio(folder, transcript, language=None):
     wav_path = os.path.join(folder, 'audio_vocals.wav')
     audio_data, samplerate = librosa.load(wav_path, sr=24000)
     speaker_dict = {}
     speaker_prompts = {}
+    speaker_fallbacks = {}
     max_prompt_samples = int(29.0 * samplerate)
     length = len(audio_data)
     delay = 0.05
@@ -478,14 +441,18 @@ def generate_speaker_audio(folder, transcript):
         speaker_segment_audio = audio_data[start:end] if end > start else np.zeros((0,))
         prev_audio = speaker_dict.get(speaker, np.zeros((0,)))
 
-        # Record verbatim transcript matching the <=29s reference prefix of SPEAKER/{speaker}.wav
-        # so same-language zero-shot TTS has an exact audio-text pair.
-        if len(speaker_segment_audio) > 0 and len(prev_audio) + len(speaker_segment_audio) <= max_prompt_samples:
-            seg_text = (segment.get('text') or '').strip()
-            if seg_text:
-                speaker_prompts.setdefault(speaker, []).append(seg_text)
-
-        speaker_dict[speaker] = np.concatenate((prev_audio, speaker_segment_audio))
+        speaker_dict.setdefault(speaker, prev_audio)
+        if len(speaker_segment_audio) > 0:
+            speaker_fallbacks.setdefault(speaker, speaker_segment_audio[:max_prompt_samples])
+        # Include audio and text together, only at complete segment boundaries.
+        # A clipped segment has no reliable verbatim transcript and is fallback-only.
+        seg_text = (segment.get('text') or '').strip()
+        complete_segment = 0 <= float(segment['start']) < float(segment['end']) <= length / samplerate
+        if (seg_text and complete_segment and segment.get('timing_reliable', False)
+                and len(speaker_segment_audio) > 0
+                and len(prev_audio) + len(speaker_segment_audio) <= max_prompt_samples):
+            speaker_prompts.setdefault(speaker, []).append(seg_text)
+            speaker_dict[speaker] = np.concatenate((prev_audio, speaker_segment_audio))
 
     speaker_folder = os.path.join(folder, 'SPEAKER')
     os.makedirs(speaker_folder, exist_ok=True)
@@ -498,11 +465,18 @@ def generate_speaker_audio(folder, transcript):
 
     for speaker, audio in speaker_dict.items():
         if len(audio) == 0:
-            audio = fallback_clip
+            audio = speaker_fallbacks.get(speaker, fallback_clip)
         speaker_file_path = os.path.join(speaker_folder, f'{speaker}.wav')
         save_wav(audio, speaker_file_path)
+        # Discard trims/text from an older reference when regenerating in place.
+        trim_path = speaker_file_path + '_30s.wav'
+        if os.path.isfile(trim_path):
+            os.remove(trim_path)
         prompt_lines = speaker_prompts.get(speaker)
+        prompt_txt_path = os.path.join(speaker_folder, f'{speaker}.txt')
         if prompt_lines:
-            prompt_txt_path = os.path.join(speaker_folder, f'{speaker}.txt')
             with open(prompt_txt_path, 'w', encoding='utf-8') as f:
                 f.write(' '.join(prompt_lines))
+        elif os.path.isfile(prompt_txt_path):
+            os.remove(prompt_txt_path)
+        write_reference_metadata(speaker_file_path, ' '.join(prompt_lines or []), language)

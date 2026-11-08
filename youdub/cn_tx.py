@@ -9,11 +9,8 @@
 #   - python 3.X
 # notes: python 2.X WILL fail or produce misleading results
 
-import sys
-import argparse
 import string
 import re
-import csv
 
 # ================================================================================ #
 #                                    basic constant
@@ -549,91 +546,6 @@ def create_system(numbering_type=NUMBERING_TYPES[1]):
     return system
 
 
-def chn2num(chinese_string, numbering_type=NUMBERING_TYPES[1]):
-
-    def get_symbol(char, system):
-        for u in system.units:
-            if char in [u.traditional, u.simplified, u.big_s, u.big_t]:
-                return u
-        for d in system.digits:
-            if char in [d.traditional, d.simplified, d.big_s, d.big_t, d.alt_s, d.alt_t]:
-                return d
-        for m in system.math:
-            if char in [m.traditional, m.simplified]:
-                return m
-
-    def string2symbols(chinese_string, system):
-        int_string, dec_string = chinese_string, ''
-        for p in [system.math.point.simplified, system.math.point.traditional]:
-            if p in chinese_string:
-                int_string, dec_string = chinese_string.split(p)
-                break
-        return [get_symbol(c, system) for c in int_string], \
-               [get_symbol(c, system) for c in dec_string]
-
-    def correct_symbols(integer_symbols, system):
-        """
-        一百八 to 一百八十
-        一亿一千三百万 to 一亿 一千万 三百万
-        """
-
-        if integer_symbols and isinstance(integer_symbols[0], CNU):
-            if integer_symbols[0].power == 1:
-                integer_symbols = [system.digits[1]] + integer_symbols
-
-        if len(integer_symbols) > 1:
-            if isinstance(integer_symbols[-1], CND) and isinstance(integer_symbols[-2], CNU):
-                integer_symbols.append(
-                    CNU(integer_symbols[-2].power - 1, None, None, None, None))
-
-        result = []
-        unit_count = 0
-        for s in integer_symbols:
-            if isinstance(s, CND):
-                result.append(s)
-                unit_count = 0
-            elif isinstance(s, CNU):
-                current_unit = CNU(s.power, None, None, None, None)
-                unit_count += 1
-
-            if unit_count == 1:
-                result.append(current_unit)
-            elif unit_count > 1:
-                for i in range(len(result)):
-                    if isinstance(result[-i - 1], CNU) and result[-i - 1].power < current_unit.power:
-                        result[-i - 1] = CNU(result[-i - 1].power +
-                                             current_unit.power, None, None, None, None)
-        return result
-
-    def compute_value(integer_symbols):
-        """
-        Compute the value.
-        When current unit is larger than previous unit, current unit * all previous units will be used as all previous units.
-        e.g. '两千万' = 2000 * 10000 not 2000 + 10000
-        """
-        value = [0]
-        last_power = 0
-        for s in integer_symbols:
-            if isinstance(s, CND):
-                value[-1] = s.value
-            elif isinstance(s, CNU):
-                value[-1] *= pow(10, s.power)
-                if s.power > last_power:
-                    value[:-1] = list(map(lambda v: v *
-                                          pow(10, s.power), value[:-1]))
-                    last_power = s.power
-                value.append(0)
-        return sum(value)
-
-    system = create_system(numbering_type)
-    int_part, dec_part = string2symbols(chinese_string, system)
-    int_part = correct_symbols(int_part, system)
-    int_str = str(compute_value(int_part))
-    dec_str = ''.join([str(d.value) for d in dec_part])
-    if dec_part:
-        return '{0}.{1}'.format(int_str, dec_str)
-    else:
-        return int_str
 
 
 def num2chn(number_string, numbering_type=NUMBERING_TYPES[1], big=False,
@@ -747,8 +659,6 @@ class Cardinal:
         self.cardinal = cardinal
         self.chntext = chntext
 
-    def chntext2cardinal(self):
-        return chn2num(self.chntext)
 
     def cardinal2chntext(self):
         return num2chn(self.cardinal)
@@ -803,9 +713,6 @@ class Fraction:
         self.fraction = fraction
         self.chntext = chntext
 
-    def chntext2fraction(self):
-        denominator, numerator = self.chntext.split('分之')
-        return chn2num(numerator) + '/' + chn2num(denominator)
 
     def fraction2chntext(self):
         numerator, denominator = self.fraction.split('/')
@@ -846,158 +753,75 @@ class Date:
         return self.chntext
 
 
-class Money:
-    """
-    MONEY类
-    """
-
-    def __init__(self, money=None, chntext=None):
-        self.money = money
-        self.chntext = chntext
-
-    def money2chntext(self):
-        money = self.money
-        pattern = re.compile(r'(\d+(\.\d+)?)')
-        matchers = pattern.findall(money)
-        if matchers:
-            for matcher in matchers:
-                money = money.replace(matcher[0], Cardinal(
-                    cardinal=matcher[0]).cardinal2chntext())
-        self.chntext = money
-        return self.chntext
 
 
-class Percentage:
-    """
-    PERCENTAGE类
-    """
 
-    def __init__(self, percentage=None, chntext=None):
-        self.percentage = percentage
-        self.chntext = chntext
 
-    def chntext2percentage(self):
-        return chn2num(self.chntext.strip().strip('百分之')) + '%'
+# Lex the original input once. Replacements are never scanned by another rule.
+# Technical identifiers are preserved; ambiguous bare integers remain quantities
+# unless their leading zeros or an explicit identifier prefix say otherwise.
+_NUMBER = r"(?:(?:[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.[0-9]+)?|\.[0-9]+)"
+TECH_IDENTIFIER_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:[A-Za-z][A-Za-z_-]*[0-9]+(?:[._-][A-Za-z0-9]+)*[A-Za-z0-9_]*"
+    r"|[0-9]+(?:\.[0-9]+){2,})(?![A-Za-z0-9_])"
+)
+_ID_PREFIX = r"(?:编号|号码|代码|工号|学号|房间号|门牌号|邮编|证件号|卡号|ID|No\.?|#)\s*"
+_NUMERIC_TOKEN_RE = re.compile('|'.join(
+    f'(?P<{kind}>{pattern})' for kind, pattern in (
+        ('identifier', _ID_PREFIX + r'[0-9]+(?![0-9.])'),
+        ('technical', TECH_IDENTIFIER_RE.pattern),
+        ('scientific', r'[+-]?' + _NUMBER + r'[eE][+-]?[0-9]+'),
+        ('date', r'(?<![0-9.])(?:(?:[089][0-9]|(?:19|20)[0-9]{2})年(?:[0-9]{1,2}月(?:[0-9]{1,2}[日号])?)?|[0-9]{1,2}月(?:[0-9]{1,2}[日号])?)'),
+        ('fraction', r'[0-9]+/[0-9]+'),
+        ('percent', r'[+-]?' + _NUMBER + r'[%％]'),
+        ('quantity', r'[+-]?' + _NUMBER + r'[多余几]?' + COM_QUANTIFIERS),
+        ('phone', r'(?:\+?86 ?)?1[3-9][0-9]{9}(?![0-9])|0(?:10|2[1-3]|[3-9][0-9]{2})-?[1-9][0-9]{6,7}(?![0-9])'),
+        ('number', r'[+-]?' + _NUMBER),
+    )
+), re.IGNORECASE)
 
-    def percentage2chntext(self):
-        return '百分之' + num2chn(self.percentage.strip().strip('%'))
+
+def _spoken_number(value, *, identifier=False):
+    value = value.replace(',', '')
+    sign = ''
+    if value.startswith(('+', '-')):
+        sign = '正' if value[0] == '+' else '负'
+        value = value[1:]
+    if identifier:
+        return sign + Digit(digit=value).digit2chntext()
+    integer, point, fraction = value.partition('.')
+    value = (integer.lstrip('0') or '0') + point + fraction
+    return sign + Cardinal(cardinal=value).cardinal2chntext()
 
 
 def normalize_nsw(raw_text):
-    text = '^' + raw_text + '$'
+    """Convert non-overlapping typed spans, preserving all surrounding text."""
+    def render(match):
+        kind, value = match.lastgroup, match.group()
+        if kind == 'technical':
+            return value
+        if kind == 'identifier':
+            digits = re.search(r'[0-9]+$', value)
+            return value[:digits.start()] + _spoken_number(digits.group(), identifier=True)
+        if kind == 'scientific':
+            mantissa, exponent = re.split('[eE]', value)
+            return _spoken_number(mantissa) + '乘以十的' + _spoken_number(exponent) + '次方'
+        if kind == 'date':
+            return Date(date=value).date2chntext()
+        if kind == 'fraction':
+            return Fraction(fraction=value).fraction2chntext()
+        if kind == 'phone':
+            return TelePhone(telephone=value).telephone2chntext(fixed='-' in value)
+        if kind == 'percent':
+            return '百分之' + _spoken_number(value[:-1])
+        if kind == 'quantity':
+            number = re.match(r'[+-]?' + _NUMBER, value).group()
+            return _spoken_number(number) + value[len(number):]
+        digits = value.lstrip('+-')
+        is_code = '.' not in digits and ',' not in digits and len(digits) > 1 and digits.startswith('0')
+        return _spoken_number(value, identifier=is_code)
 
-    # 规范化日期
-    pattern = re.compile(
-        r"\D+((([089]\d|(19|20)\d{2})年)?(\d{1,2}月(\d{1,2}[日号])?)?)")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('date')
-        for matcher in matchers:
-            text = text.replace(matcher[0], Date(
-                date=matcher[0]).date2chntext(), 1)
-
-    # 规范化金钱
-    pattern = re.compile(
-        r"\D+((\d+(\.\d+)?)[多余几]?" + CURRENCY_UNITS + r"(\d" + CURRENCY_UNITS + r"?)?)")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('money')
-        for matcher in matchers:
-            text = text.replace(matcher[0], Money(
-                money=matcher[0]).money2chntext(), 1)
-
-    # 规范化固话/手机号码
-    # 手机
-    # http://www.jihaoba.com/news/show/13680
-    # 移动：139、138、137、136、135、134、159、158、157、150、151、152、188、187、182、183、184、178、198
-    # 联通：130、131、132、156、155、186、185、176
-    # 电信：133、153、189、180、181、177
-    pattern = re.compile(
-        r"\D((\+?86 ?)?1([38]\d|5[0-35-9]|7[678]|9[89])\d{8})\D")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('telephone')
-        for matcher in matchers:
-            text = text.replace(matcher[0], TelePhone(
-                telephone=matcher[0]).telephone2chntext(), 1)
-    # 固话
-    pattern = re.compile(r"\D((0(10|2[1-3]|[3-9]\d{2})-?)?[1-9]\d{6,7})\D")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('fixed telephone')
-        for matcher in matchers:
-            text = text.replace(matcher[0], TelePhone(
-                telephone=matcher[0]).telephone2chntext(fixed=True), 1)
-
-    # 规范化分数
-    pattern = re.compile(r"(\d+/\d+)")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('fraction')
-        for matcher in matchers:
-            text = text.replace(matcher, Fraction(
-                fraction=matcher).fraction2chntext(), 1)
-
-    # 规范化百分数
-    text = text.replace('％', '%')
-    pattern = re.compile(r"(\d+(\.\d+)?%)")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('percentage')
-        for matcher in matchers:
-            text = text.replace(matcher[0], Percentage(
-                percentage=matcher[0]).percentage2chntext(), 1)
-
-    # 规范化纯数+量词 (优先匹配有量词的数值，如 10000人, 5000台, 1000把)
-    pattern = re.compile(r"(\d+(\.\d+)?)[多余几]?" + COM_QUANTIFIERS)
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('cardinal+quantifier')
-        for matcher in matchers:
-            text = text.replace(matcher[0], Cardinal(
-                cardinal=matcher[0]).cardinal2chntext(), 1)
-
-    # 规范化前导0的编号代码 (如 007, 010, 00后；必须以非数字为前缀避免切断大数)
-    pattern = re.compile(r"(?<!\d)(0\d+)")
-    matchers = pattern.findall(text)
-    if matchers:
-        for matcher in matchers:
-            text = text.replace(matcher, Digit(
-                digit=matcher).digit2chntext(), 1)
-
-    # 规范化显式编号/代码 (如 编号1234, ID5678, 代码002)
-    pattern = re.compile(r"((?:编号|号码|代码|工号|学号|房间号|门牌号|邮编|证件号|卡号|ID|No\.?|#)\s*)(\d+)", re.IGNORECASE)
-    matchers = pattern.findall(text)
-    if matchers:
-        for prefix, num in matchers:
-            text = text.replace(f"{prefix}{num}", f"{prefix}{Digit(digit=num).digit2chntext()}", 1)
-
-    # 规范化纯数 (如 1000, 5000, 10000, 3.14)
-    pattern = re.compile(r"(\d+(\.\d+)?)")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('cardinal')
-        for matcher in matchers:
-            text = text.replace(matcher[0], Cardinal(
-                cardinal=matcher[0]).cardinal2chntext(), 1)
-
-    # 规范化剩余超长无量词连续编号串 (>= 7位，如无空格的序列号)
-    pattern = re.compile(r"(?<!\d)(\d{7,32})(?!\d)")
-    matchers = pattern.findall(text)
-    if matchers:
-        for matcher in matchers:
-            text = text.replace(matcher, Digit(
-                digit=matcher).digit2chntext(), 1)
-
-    # restore P2P, O2O, B2C, B2B etc
-    pattern = re.compile(r"(([a-zA-Z]+)二([a-zA-Z]+))")
-    matchers = pattern.findall(text)
-    if matchers:
-        # print('particular')
-        for matcher in matchers:
-            text = text.replace(matcher[0], matcher[1]+'2'+matcher[2], 1)
-
-    return text.lstrip('^').rstrip('$')
+    return _NUMERIC_TOKEN_RE.sub(render, raw_text)
 
 
 class TextNorm:

@@ -1,7 +1,7 @@
 import json
 import os
 import re
-import subprocess
+from .media import remux_to_mp4
 from loguru import logger
 import yt_dlp
 
@@ -50,20 +50,7 @@ def _ensure_mp4_output(output_folder: str) -> bool:
         candidate = os.path.join(output_folder, f'download{ext}')
         if candidate != target_mp4 and os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
             logger.info(f'Remuxing {candidate} -> {target_mp4}')
-            try:
-                subprocess.run(
-                    ['ffmpeg', '-loglevel', 'error', '-i', candidate, '-c', 'copy', target_mp4, '-y'],
-                    check=True,
-                )
-            except subprocess.CalledProcessError:
-                subprocess.run(
-                    [
-                        'ffmpeg', '-loglevel', 'error', '-i', candidate,
-                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac',
-                        target_mp4, '-y',
-                    ],
-                    check=True,
-                )
+            remux_to_mp4(candidate, target_mp4)
             if os.path.isfile(target_mp4) and os.path.getsize(target_mp4) > 0:
                 try:
                     os.remove(candidate)

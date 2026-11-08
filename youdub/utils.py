@@ -258,6 +258,7 @@ def should_skip_step(
       - 返回 False（步骤成功完成后应调用 `mark_step_done` 写入新指纹）。
     """
     sidecar = os.path.join(folder, f'.{step_name}.fingerprint')
+    pending_sidecar = os.path.join(folder, f'.{step_name}.pending.fingerprint')
     current = compute_fingerprint(params)
 
     cached = None
@@ -273,15 +274,28 @@ def should_skip_step(
     if cached == current and outputs_ok:
         return True
 
+    # A pending fingerprint records the inputs of an unfinished attempt, never
+    # proof of completion. Preserve its intermediates across retries/restarts.
+    previous_attempt = cached
+    if os.path.isfile(pending_sidecar):
+        try:
+            with open(pending_sidecar, 'r', encoding='utf-8') as f:
+                previous_attempt = f.read().strip()
+        except OSError:
+            previous_attempt = None
+
     _remove_path_quietly(sidecar)
     for path in output_paths:
         _remove_path_quietly(path)
 
-    # When parameters changed (or fingerprint is missing), also purge auxiliary intermediates.
-    if extra_cleanup_paths and cached != current:
+    # Unknown or changed inputs must still invalidate auxiliary intermediates.
+    if extra_cleanup_paths and previous_attempt != current:
         for path in extra_cleanup_paths:
             _remove_path_quietly(path)
 
+    os.makedirs(folder, exist_ok=True)
+    with open(pending_sidecar, 'w', encoding='utf-8') as f:
+        f.write(current)
     return False
 
 
@@ -302,6 +316,7 @@ def mark_step_done(
     os.makedirs(folder, exist_ok=True)
     with open(sidecar, 'w', encoding='utf-8') as f:
         f.write(current)
+    _remove_path_quietly(os.path.join(folder, f'.{step_name}.pending.fingerprint'))
 
 
 def resolve_torch_device(device: str = 'auto'):

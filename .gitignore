@@ -20,3 +20,6 @@ venv/
 # 忽略压缩包
 *.tar.gz
 *.zip
+# Local development worktrees and virtual environments
+.worktrees/
+.venv/

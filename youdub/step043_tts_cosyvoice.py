@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torchaudio
 
+from .text_frontend import normalization_identity, require_native_frontend
 from .utils import resolve_torch_device, save_wav
 
 # 找到 CosyVoice 的根目录
@@ -94,10 +95,13 @@ def load_cosyvoice_model(device: str = 'auto'):
                         loaded = CosyVoice(model_name)
                 else:
                     loaded = CosyVoice(model_name)
+                backend = require_native_frontend(loaded)
+                logger.info(f'CosyVoice normalization: backend={backend}, identity={normalization_identity("cosyvoice")}')
                 _bind_cosyvoice_device(loaded, device_key)
                 logger.info(f"CosyVoice model loaded from: {model_name} on {device_key}")
                 break
             except Exception as e:
+                loaded = None
                 last_error = e
                 logger.warning(f"Failed to load CosyVoice model from {model_name}: {e}")
 
@@ -137,29 +141,19 @@ def _collect_tts_chunks(result_generator):
     return chunks
 
 
-def _has_cjk(text: str) -> bool:
-    return any('\u4e00' <= ch <= '\u9fff' for ch in (text or ''))
-
-
-def _same_script_family(text_a: str, text_b: str) -> bool:
-    """Return True when prompt_text and target text share CJK vs non-CJK script."""
-    if not text_a or not text_b:
-        return False
-    return _has_cjk(text_a) == _has_cjk(text_b)
-
-
 def generate_cosyvoice_audio(
     text,
     prompt_speech_path,
     output_path,
     prompt_text="",
     device="auto",
+    prompt_pair_verified=False,
 ):
     """
     Generate TTS audio with CosyVoice voice cloning.
 
     Uses zero-shot mode ONLY when a genuine verbatim transcript matching the
-    reference speaker audio is available in the same language family; otherwise
+    reference speaker audio is verified in the same language; otherwise
     uses cross-lingual mode directly to avoid audio-prompt text mismatch artifacts.
     """
     text_clean = (text or "").strip()
@@ -174,7 +168,7 @@ def generate_cosyvoice_audio(
     prompt_path = _ensure_under_30s(prompt_speech_path)
     prompt_text = (prompt_text or "").strip()
 
-    use_zero_shot = bool(prompt_text) and _same_script_family(prompt_text, text_clean)
+    use_zero_shot = bool(prompt_text) and prompt_pair_verified and prompt_path == prompt_speech_path
 
     try:
         with infer_lock:
@@ -187,7 +181,7 @@ def generate_cosyvoice_audio(
             with dev_ctx:
                 if use_zero_shot:
                     try:
-                        result_generator = model.inference_zero_shot(text_clean, prompt_text, prompt_path)
+                        result_generator = model.inference_zero_shot(text_clean, prompt_text, prompt_path, text_frontend=True)
                         chunks = _collect_tts_chunks(result_generator)
                         if not chunks:
                             raise RuntimeError("CosyVoice zero-shot yielded 0 chunks.")
@@ -195,10 +189,10 @@ def generate_cosyvoice_audio(
                         logger.warning(
                             f"CosyVoice zero-shot failed, fallback to cross-lingual. err={zero_shot_err}"
                         )
-                        result_generator = model.inference_cross_lingual(text_clean, prompt_path)
+                        result_generator = model.inference_cross_lingual(text_clean, prompt_path, text_frontend=True)
                         chunks = _collect_tts_chunks(result_generator)
                 else:
-                    result_generator = model.inference_cross_lingual(text_clean, prompt_path)
+                    result_generator = model.inference_cross_lingual(text_clean, prompt_path, text_frontend=True)
                     chunks = _collect_tts_chunks(result_generator)
 
         if not chunks:

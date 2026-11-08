@@ -15,8 +15,6 @@ _separator_load_locks = {}
 _separator_registry_lock = threading.Lock()
 
 
-def init_demucs(model_name: str = "htdemucs_ft", device: str = "auto", shifts: int = 5):
-    return load_model(model_name=model_name, device=device, shifts=shifts)
 
 
 def _resolve_device(device: str) -> str:
@@ -68,9 +66,6 @@ def separate_audio(
     vocal_output_path = os.path.join(folder, 'audio_vocals.wav')
     instruments_output_path = os.path.join(folder, 'audio_instruments.wav')
 
-    if _has_valid_audio_content(vocal_output_path) and _has_valid_audio_content(instruments_output_path):
-        logger.info(f'Audio already separated in {folder}')
-        return
 
     # Demucs cannot process empty wav; fail fast with a clear error.
     if not _has_valid_audio_content(audio_path):

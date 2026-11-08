@@ -3,7 +3,6 @@ import json
 import os
 import subprocess
 
-from loguru import logger
 
 
 def _snap_word_boundary(text: str, idx: int, total_len: int) -> int:
@@ -236,11 +235,8 @@ def _subtitle_layout_for_aspect(aspect_ratio: float) -> tuple[int, int, int]:
     return 30, 42, 15
 
 
-def synthesize_video(folder, subtitles=True, speed_up=1.05, fps=30, resolution='1080p'):
+def synthesize_video(folder, subtitles=True, speed_up=1.05, fps=30, resolution='1080p', font_name='sans-serif'):
     output_video = os.path.join(folder, 'video.mp4')
-    if os.path.isfile(output_video) and os.path.getsize(output_video) > 0:
-        logger.info(f'Video already synthesized in {folder}')
-        return
 
     # Prefer TTS-aligned subtitle timings produced by Step 4; fall back to Step 3 translation.json.
     aligned_translation_path = os.path.join(folder, 'translation_tts.json')
@@ -279,7 +275,6 @@ def synthesize_video(folder, subtitles=True, speed_up=1.05, fps=30, resolution='
     output_video_name = os.path.basename(output_video)
     srt_path_ffmpeg = _escape_subtitles_path_for_filter(os.path.basename(srt_path))
     outline = max(1, int(round(font_size / 8)))
-    font_name = os.getenv('SUBTITLE_FONT_NAME', 'sans-serif')
     video_speed_and_scale = f"setpts=PTS/{speed_up},scale={width}:{height}"
     audio_speed_filter = _build_atempo_filter(speed_up)
     subtitle_filter = (
