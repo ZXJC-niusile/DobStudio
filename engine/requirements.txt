@@ -1,0 +1,8 @@
+# Install torch/torchaudio for the intended CPU/CUDA runtime first.
+-r vendor/CosyVoice/requirements.txt
+numpy
+scipy
+soundfile
+torchaudio
+librosa
+matcha-tts
