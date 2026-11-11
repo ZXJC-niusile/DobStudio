@@ -1,158 +1,89 @@
-# OmniDub
+# DobStudio
 
-自动化视频配音流水线：输入 YouTube 链接或本地视频，自动完成语音识别、翻译、AI 声音克隆配音、双语字幕烧录，输出配音视频。
+DobStudio 是一款集 AI 语音识别、双语字幕翻译精修、声音克隆配音与原声伴奏混音于一体的现代化 Windows 桌面工作站。
 
 ## 功能
 
-- **视频下载**：支持 YouTube 单视频 / 播放列表 / 频道（yt-dlp），也支持本地视频文件（MP4 / MKV / WebM / MOV 等）
-- **人声分离**：Demucs (htdemucs_ft) 分离人声与背景音乐
-- **语音识别**：WhisperX (large-v3) + pyannote 说话人分离
-- **翻译**：OpenAI GPT，支持中 / 英 / 德 / 法 / 俄等目标语言
-- **AI 配音**：两种 TTS 引擎可选
-  - **CosyVoice 300M** — 零样本 / 跨语种声音克隆（Apache 2.0），在线与本地视频默认引擎（支持中 / 英 / 日 / 韩等）
-  - **XTTS v2**（Coqui TTS）— 多语言声音克隆（opt-in 集成，支持德 / 法 / 俄 / 西等语种，需本地权重与 CPML 确认）
-- **时间拉伸对齐**：TTS 输出按 0.82x-1.0x 拉伸匹配原始语速
-- **双语字幕**：生成 SRT 字幕并烧录至视频（自适应横屏 16:9 与竖屏 9:16 布局）
-- **多 GPU 调度**：支持 1-8 并行 worker，尊重 `CUDA_VISIBLE_DEVICES` 并自动选择最空闲 GPU
-- **断点续传**：任务配置与上游产物感知的 DAG 缓存指纹检查，崩溃或中途重跑后可精准恢复
+- **全流程自由组合**：支持「纯字幕转写/压制（零 GPU 依赖）」与「高保真声音克隆配音」自由选择。
+- **音视频导入与识别**：支持本地音视频导入与在线视频下载，内置 whisper.cpp 极速离线转写。
+- **双语翻译与字幕精修**：内置主流大模型预设（DeepSeek、OpenAI、硅基流动等），支持 SRT 导入、虚拟化长列表编辑与毫秒级视频同屏定位。
+- **多引擎语音克隆**：集成 CosyVoice（阿里通义，高保真克隆、原生文本前端）与 XTTS（轻量多语言跨语种克隆）。
+- **智能伴奏分离与混音**：支持可选的 Demucs 人声/伴奏分离，提供自动降鸭（Audio Ducking）与可调节伴奏音量。
+- **专业级多格式交付**：支持原视频声轨、纯配音干声、配音+原片伴奏混音三种成片输出；支持字幕硬烧录与原画幅、16:9、9:16 画幅自适应适配。
+- **任务调度与安全沙箱**：单队列互斥排队、不可变任务快照、支持中途安全取消、断点保存与异常隔离。
 
-## 技术栈
+## 启动与使用
 
-| 类别 | 技术 |
+需要 Node.js 22.5+ 和 npm。
+
+```powershell
+npm ci
+npm run build
+npm start
+```
+
+1. 在「运行设置」一键安装字幕工具（FFmpeg / yt-dlp）及 whisper.cpp base 模型。
+2. 导入视频，在「字幕工作台」生成或导入字幕。翻译语言留空则仅转写；翻译可直接在设置中选用预设服务商（如 DeepSeek）。
+3. 校对并保存字幕，可直接导出 SRT 或烧录成片交付（无需配音时零 GPU 消耗）。
+4. 需要配音时，配置 Python 环境和模型，在「声音与配音」选择克隆引擎、伴奏分离开关与音量后提交任务。
+5. 在任务记录中实时查看进度、一键定位打开成片与音频文件。
+
+项目工程与用户配置保存在 Electron 的 DobStudio userData 目录，安装版与便携版数据统一持久化。
+
+## 配音环境（按需安装）
+
+各子模块依赖高度解耦，用户可根据实际需求与硬件配置按需安装，无需全量捆绑（纯字幕用户完全无需 Python）：
+
+```powershell
+# 1. 基础 PyTorch 环境（先在所选 Python 环境安装适配 CPU 或 CUDA 的 torch 与 torchaudio）
+
+# 2. 按需安装克隆与伴奏引擎
+# CosyVoice 高保真引擎
+python -m pip install -r engine/requirements.txt
+# XTTS 轻量跨语种引擎
+python -m pip install -r engine/requirements-xtts.txt
+# Demucs 背景音乐分离（如需保留原声伴奏）
+python -m pip install -r engine/requirements-bgm.txt
+```
+
+CosyVoice 与 XTTS 在运行设置中分别选择本地模型目录（XTTS 目录包含 `config.json`、`model.pth`、`vocab.json`）。Demucs 在勾选伴奏分离后首次运行会按需载入权重，也可提前放置于 Torch 缓存中。
+
+参考音频使用一段清晰、完整的 0.5–29 秒单人声 WAV，参考文本对应录音原文。单句配音超出目标区间时，可调整译文或微调字幕时间戳。
+
+## 开发与测试
+
+```powershell
+npm run typecheck       # TypeScript 全工程静态类型检查
+npm test                # Core 与 App 前端全量自动化测试
+npm run test:engine     # Python 配音与媒体合成协议测试
+npm run build           # 前端 Vite 产物与 Electron 编译
+npm run test:editor     # Electron 窗口与字幕保存集成测试
+npm run smoke           # 桌面端端到端 Smoke 检查
+npm run package         # 生成 Windows NSIS 安装包与 Portable 便携版
+```
+
+- `test:editor`：Electron 主进程与字幕存储契约测试，运行前先执行 build。
+- `smoke`：独立启动、IPC 通信与 Python Worker 进程协议测试，采用隔离的临时目录。
+- Python 媒体测试：可通过环境变量 `DOBSTUDIO_TEST_MEDIA_BIN` 指定本地 ffmpeg/ffprobe 目录；自动化测试中对深度学习模型采用 Mock 替身以确保轻量极速回归。
+- `package`：生成 `app/release/` 下的 NSIS 安装程序（`.exe`）与免安装便携版（`portable.exe`）。
+
+## 代码结构
+
+| 目录 | 职责与架构边界 |
 |---|---|
-| 语言 | Python 3.10 |
-| Web UI | Gradio |
-| 视频下载 | yt-dlp |
-| 音频分离 | ffmpeg + Demucs |
-| 语音识别 | WhisperX + pyannote |
-| 翻译 | OpenAI GPT API |
-| TTS | CosyVoice 300M / Coqui XTTS v2 (opt-in) |
-| GPU | PyTorch + CUDA 12.8 |
+| `app/src/` | React 19 渲染层：虚拟化长字幕编辑、实时播放器、模块化配音面板与设置 |
+| `app/electron/` | 桌面宿主层：强类型 Preload 沙箱、系统级文件选择、IPC 调度与应用生命周期 |
+| `core/src/studio/` | 单任务 Jobs 调度器、SQLite Repository 项目库、不可变任务快照与 Worker 协议 |
+| `core/src/` | 纯轻量工具库：字幕解析（SRT/ASS）、whisper.cpp ASR、下载器、流式翻译与媒体滤镜 |
+| `engine/dobstudio_engine/` | Python CLI Worker：按需唤起模型推理（CosyVoice/XTTS）、Demucs 伴奏提取与 FFmpeg 降鸭混音 |
+| `engine/vendor/` | 第三方开源模型库与许可证保留目录 |
 
-## 快速开始
+任务执行采用严格的只读快照机制，中间产物与音轨写入各自独立的任务目录。Python Worker 彻底废除 Web 服务端口，通过版本化的标准 JSONL 与 Electron 主进程通信。
 
-### 1. 系统要求
+## 许可与致谢
 
-- Linux 服务器（推荐）/ Windows / macOS
-- NVIDIA GPU + 驱动程序（GPU 模式）
-- [ffmpeg](https://ffmpeg.org/) 在 PATH 中
-- [Conda](https://docs.conda.io/) 已安装
+DobStudio 自有代码采用 [MIT License](LICENSE)。核心工程实践借鉴并吸收了 SubStudio 的字幕渲染处理经验与 OmniDub 的语音克隆工程积累。第三方组件及权重模型遵循各自开源许可证：
 
-### 2. 一键安装
-
-```bash
-git clone <your-repo-url> OmniDub
-cd OmniDub
-bash scripts/install_all.sh
-# 如需同时安装可选的 Coqui XTTS v2 运行库：
-# INSTALL_XTTS=1 bash scripts/install_all.sh
-```
-
-安装步骤、可选 XTTS 和真实依赖检查统一见 [部署指南](docs/ONE_CLICK_INSTALL.md)。
-
-### 3. 配置环境变量
-
-```bash
-cp .env.example .env
-# 编辑 .env，填入你的 API Key
-```
-
-必需的环境变量：
-
-| 变量 | 说明 | 必填 |
-|---|---|---|
-| `OPENAI_API_KEY` | OpenAI API 密钥（用于翻译和摘要）| 是 |
-| `MODEL_NAME` | 使用的 GPT 模型名称 | 是 |
-| `HF_TOKEN` | HuggingFace Token（下载 WhisperX / pyannote 模型）| 是 |
-
-可选的环境变量：
-
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `OPENAI_API_BASE` | `https://api.openai.com/v1` | 自定义 API 地址（兼容 OpenAI 格式的第三方服务）|
-| `HUGGINGFACE_TOKEN` | — | `HF_TOKEN` 的别名，二选一即可 |
-| `HF_ENDPOINT` | — | HuggingFace 镜像地址，如 `https://hf-mirror.com` |
-| `OMNIDUB_XTTS_LOCAL_PATH` | — | 仅启用 `xtts` 时必填，本地 XTTS v2 权重目录路径 |
-| `WHISPERX_ALIGN_FALLBACK_LANGUAGE` | `en` | 当检测到的语言没有对齐模型时的回退语言 |
-| `WHISPERX_DIARIZATION_MODEL` | — | 自定义 pyannote 说话人分离模型 |
-| `FORMATION_TTS_STYLE` | `chinese_compact` | 足球阵型数字的 TTS 读法风格 |
-
-### 4. 启动
-
-```bash
-conda activate omnidub
-python app.py
-```
-
-浏览器打开 Gradio 提供的本地链接，选择"在线视频"或"本地视频"标签页开始使用。
-
-## 项目结构
-
-```
-OmniDub/
-├── app.py                          # Gradio Web 入口
-├── requirements.txt                # 主依赖清单
-├── .env.example                    # 环境变量模板
-├── youdub/                         # 核心流水线
-│   ├── pipeline.py                 #   共用任务执行器
-│   ├── utils.py                    #   GPU 调度、缓存指纹、音频工具
-│   ├── cn_tx.py                    #   中文文本规范化
-│   ├── step000_video_downloader.py #   1. 下载视频
-│   ├── step010_demucs_vr.py        #   2. 人声分离
-│   ├── step020_whisperx.py         #   3. 语音识别
-│   ├── step030_translation.py      #   4. 翻译
-│   ├── step040_tts.py              #   5. TTS 调度
-│   ├── step042_tts_xtts.py         #   5a. XTTS v2 引擎 (opt-in)
-│   ├── step043_tts_cosyvoice.py    #   5b. CosyVoice 引擎 (默认)
-│   ├── step050_synthesize_video.py #   6. 视频合成
-│   └── step060_generate_info.py    #   7. 缩略图+摘要
-├── CosyVoice/                      # CosyVoice TTS 引擎（内嵌源码）
-│   ├── cosyvoice/                  #   模型代码（保留上游模型实现，未做大规模裁剪）
-│   ├── third_party/Matcha-TTS/     #   Matcha-TTS 依赖（见下方说明）
-│   └── requirements.txt            #   CosyVoice 运行时依赖
-├── tests/                          # 回归单元测试套件
-├── docs/ONE_CLICK_INSTALL.md       # 部署指南
-└── scripts/install_all.sh          # 一键安装脚本
-```
-
-## 组件复用与依赖
-
-结构化调用方式见 [核心接口](docs/CORE_API.md)。Matcha-TTS 作为安装依赖管理，安装失败会中止；不再使用空 stub 或伪子模块。
-
-## TTS 引擎说明
-
-| 引擎 | 默认状态 | 模型 | 特点 |
-|---|---|---|---|
-| CosyVoice | 在线 & 本地默认 | CosyVoice-300M | 开箱即用（Apache 2.0），零样本/跨语种声音克隆（支持中/英/日/韩） |
-| XTTS v2 | 可选启用 (Opt-in) | Coqui TTS | 多语言声音克隆（含德/法/俄/西等），需自备权重并确认 CPML |
-
-在 Gradio 界面中可以通过 `TTS Engine` 参数切换。使用 `CosyVoice` 时首次运行会自动下载模型权重；若目标语言为德语 / 法语 / 俄语等欧陆语种，请切换至 `xtts` 引擎。
-
-## 回归测试
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-## 致谢
-
-- [Demucs](https://github.com/facebookresearch/demucs) — 人声分离
-- [WhisperX](https://github.com/m-bain/whisperX) — 语音识别
-- [CosyVoice](https://github.com/FunAudioLLM/CosyVoice) — TTS 引擎
-- [Matcha-TTS](https://github.com/shivammehta25/Matcha-TTS) — 流匹配 TTS
-- [Coqui TTS](https://github.com/coqui-ai/TTS) — XTTS v2 引擎
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — 视频下载
-
-## License
-
-本项目代码采用 [MIT License](LICENSE) 开源。
-
-> **重要**：XTTS v2 在本项目中是 **opt-in 集成**——`youdub/step042_tts_xtts.py` **不会自动**从 HuggingFace / Coqui 下载 XTTS v2 模型权重（CPML 禁止再分发）。
->
-> 如需启用 XTTS v2：
->
-> 1. 安装运行库：`INSTALL_XTTS=1 bash scripts/install_all.sh`（或手动 `pip install TTS`）；
-> 2. 自行从 [HuggingFace `coqui/XTTS-v2`](https://huggingface.co/coqui/XTTS-v2) 或 Coqui TTS 模型库下载权重，并**由您本人同意 CPML**；
-> 3. 设置环境变量 `OMNIDUB_XTTS_LOCAL_PATH=<权重本地目录>`，并在界面勾选 CPML 非商用确认框（或调用时显式传入 `xtts_cpml_ack=True`）。
->
-> 如需商用，建议直接使用默认的 `tts_engine="cosyvoice"`（CosyVoice 300M，Apache 2.0），或自行向 Coqui 申请 XTTS v2 商业授权。详见 [https://coqui.ai/cpml](https://coqui.ai/cpml)。
+- CosyVoice：[Apache-2.0](engine/vendor/CosyVoice/LICENSE)
+- Matcha-TTS：[MIT](engine/vendor/CosyVoice/third_party/Matcha-TTS/LICENSE)
+- XTTS-v2 权重模型：[Coqui Public Model License](https://huggingface.co/coqui/XTTS-v2)

@@ -1,25 +1,9 @@
-# 忽略所有编译缓存
+node_modules/
+dist/
+dist-electron/
+release/
 __pycache__/
 *.pyc
-
-# 忽略本地模型文件（核心！）
-models/
-
-# 忽略所有音视频大文件
-*.mp4
-*.wav
-*.mp3
-*.webp
-videos/
-
-# 忽略环境与密钥
-.env
-venv/
-.gradio/
-
-# 忽略压缩包
-*.tar.gz
-*.zip
-# Local development worktrees and virtual environments
-.worktrees/
 .venv/
+.sandbox/
+*.log
