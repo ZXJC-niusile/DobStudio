@@ -1,0 +1,35 @@
+{
+  "name": "@dobstudio/app",
+  "version": "2.0.0-beta",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "build": "vite build && tsc -p electron/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p electron/tsconfig.json --noEmit",
+    "start": "electron .",
+    "smoke": "electron . --smoke",
+    "package": "electron-builder --config electron-builder.yml",
+    "package:dir": "electron-builder --config electron-builder.yml --dir",
+    "test": "node --test --experimental-strip-types test/*.test.ts"
+  },
+  "dependencies": {
+    "@dobstudio/core": "*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "45.2.3",
+    "electron-builder": "^26.18.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.3.5"
+  },
+  "description": "DobStudio desktop application — AI subtitles, voice cloning, and audio mixing workstation.",
+  "author": {
+    "name": "DobStudio contributors"
+  },
+  "license": "MIT"
+}

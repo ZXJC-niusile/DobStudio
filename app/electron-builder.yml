@@ -1,0 +1,32 @@
+appId: app.dobstudio.desktop
+productName: DobStudio
+copyright: Copyright © 2026 DobStudio contributors
+directories:
+  output: release
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+asar: true
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: "${productName}-${version}-setup.${ext}"
+portable:
+  artifactName: "${productName}-${version}-portable.${ext}"
+extraResources:
+  - from: ../LICENSE
+    to: LICENSE-DobStudio.txt
+  - from: ../README.md
+    to: README-DobStudio.md
+  - from: ../engine
+    to: engine
+    filter: ["**/*", "!**/__pycache__/**/*", "!tests/**/*"]

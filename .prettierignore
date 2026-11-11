@@ -1,0 +1,7 @@
+engine/
+node_modules/
+**/dist/
+**/dist-electron/
+**/release/
+docs/provenance.json
+package-lock.json
