@@ -18,7 +18,8 @@
     "verify": "npm run typecheck && npm test && npm run build && npm run smoke && npm run test:editor",
     "format": "prettier --write \"app/**/*.{ts,tsx,cts,css,json,html,yml}\" \"core/src/studio/**/*.ts\" core/test/studio.test.ts",
     "test:engine": "python -m unittest discover -s engine/tests -v",
-    "test:editor": "electron app/test/editor-save.cjs"
+    "test:editor": "electron app/test/editor-save.cjs",
+    "test:ui": "electron app/test/ui-smoke.cjs"
   },
   "engines": {
     "node": ">=22.5.0"

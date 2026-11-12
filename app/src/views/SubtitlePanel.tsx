@@ -54,24 +54,23 @@ export function SubtitlePanel({
   }
 
   return (
-    <>
-      {/* 自主工作流提示 */}
-      <div className="workflow-notice-box">
-        <div className="workflow-notice-header">
-          <span className="badge badge-accent">自主工作流支持</span>
-          <b>纯字幕制作与压制 · 零 GPU 消耗</b>
-        </div>
-        <p className="workflow-notice-desc">
-          若您的场景仅需制作字幕或压制成片，在转写或翻译后，可直接点击{" "}
-          <strong>「导出 SRT」</strong>{" "}
-          获取字幕文件，或在下方工具条配置音轨后点击{" "}
-          <strong>「烧录字幕并导出视频」</strong> 即可交付。
-          <em>纯字幕流程无需进入配音阶段，不加载重度语音模型，零 GPU 消耗。</em>
-          如需 AI 克隆配音，请校对完成后前往「声音与配音」工作区。
-        </p>
+    <div className="editor-workspace">
+      <div className="editor-steps">
+        <span className="current">
+          <b>01</b> 识别与翻译
+        </span>
+        <i />
+        <span>
+          <b>02</b> 校对字幕
+        </span>
+        <i />
+        <span>
+          <b>03</b> 导出成片
+        </span>
+        <small>SUBTITLE STUDIO</small>
       </div>
 
-      <div className="panel">
+      <div className="panel transcription-panel">
         <div className="inline">
           <label>
             识别模型
@@ -322,6 +321,6 @@ export function SubtitlePanel({
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }

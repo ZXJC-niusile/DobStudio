@@ -1,3 +1,4 @@
+import { Icon } from "../visuals";
 import { useEffect, useRef, useState } from "react";
 import type { BilingualCue } from "@dobstudio/core";
 import { api } from "../bridge";
@@ -66,7 +67,11 @@ export function MediaPreview({
           )}
         </div>
       ) : (
-        <p className="muted">本地视频可直接预览；在线项目需要先下载媒体。</p>
+        <div className="preview-placeholder">
+          <Icon name="film" size={36} />
+          <b>画面即将在这里呈现</b>
+          <span>在线视频下载后即可预览</span>
+        </div>
       )}
       <div className="preview-hint">
         点击字幕编号定位视频 · 预览使用当前编辑内容，导出使用已保存版本

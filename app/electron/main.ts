@@ -192,7 +192,7 @@ app
       height: 930,
       minWidth: 1080,
       minHeight: 720,
-      backgroundColor: "#121817",
+      backgroundColor: "#0a0b12",
       show: !smoke,
       webPreferences: {
         preload: join(here, "preload.cjs"),
