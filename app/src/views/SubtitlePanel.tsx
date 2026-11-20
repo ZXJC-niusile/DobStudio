@@ -1,3 +1,9 @@
+import {
+  readEditingPosition,
+  rememberEditingPosition,
+  TrackStrip,
+  timecode,
+} from "../editingPosition";
 import { MediaPreview } from "./MediaPreview";
 import { useEffect, useRef, useState } from "react";
 import type { Project, TaskRequest } from "@dobstudio/core/studio";
@@ -38,6 +44,34 @@ export function SubtitlePanel({
   );
   const ref = useRef<HTMLDivElement>(null);
   const virtual = useVirtualRows(ref, cues, 132);
+  const [focusedCue, setFocusedCue] = useState(() => {
+    const saved = readEditingPosition();
+    return Math.min(
+      saved?.projectId === project.id ? saved.cueIndex : 0,
+      Math.max(0, project.cues.length - 1),
+    );
+  });
+  useEffect(() => {
+    const saved = readEditingPosition();
+    const index = Math.min(
+      saved?.projectId === project.id ? saved.cueIndex : 0,
+      Math.max(0, project.cues.length - 1),
+    );
+    ref.current?.scrollTo({ top: index * 132 });
+    if (project.cues[index])
+      setSeek({ ms: project.cues[index]!.startMs, sequence: 1 });
+  }, [project.id]);
+  function locate(index: number) {
+    const cue = cues[index];
+    if (!cue) return;
+    setFocusedCue(index);
+    rememberEditingPosition(project.id, index);
+    ref.current?.scrollTo({ top: index * 132, behavior: "smooth" });
+    setSeek((previous) => ({
+      ms: cue.startMs,
+      sequence: (previous?.sequence ?? 0) + 1,
+    }));
+  }
 
   useEffect(() => onDirty(dirty), [dirty, onDirty]);
   useEffect(() => {
@@ -56,18 +90,17 @@ export function SubtitlePanel({
   return (
     <div className="editor-workspace">
       <div className="editor-steps">
-        <span className="current">
+        <span className={!cues.length ? "current" : ""}>
           <b>01</b> 识别与翻译
         </span>
         <i />
-        <span>
+        <span className={cues.length ? "current" : ""}>
           <b>02</b> 校对字幕
         </span>
         <i />
         <span>
           <b>03</b> 导出成片
         </span>
-        <small>SUBTITLE STUDIO</small>
       </div>
 
       <div className="panel transcription-panel">
@@ -215,6 +248,16 @@ export function SubtitlePanel({
         </div>
       </div>
 
+      {cues.length > 0 && (
+        <div className="editing-tracks">
+          <div className="track-key">
+            <span>片段导航</span>
+
+            <time>{timecode(cues[focusedCue]?.startMs ?? 0)}</time>
+          </div>
+          <TrackStrip cues={cues} selected={focusedCue} select={locate} />
+        </div>
+      )}
       <div className="section-heading">
         <h2>
           字幕时间轴 <span>{cues.length} 条</span>
@@ -261,17 +304,19 @@ export function SubtitlePanel({
             {virtual.items.map((c, offset) => {
               const i = virtual.startIndex + offset;
               return (
-                <div className="cue" key={c.index}>
+                <div
+                  className={`cue ${focusedCue === i ? "is-focused" : ""}`}
+                  key={c.index}
+                  onFocus={() => {
+                    setFocusedCue(i);
+                    rememberEditingPosition(project.id, i);
+                  }}
+                >
                   <div className="cue-time">
                     <button
                       className="cue-seek"
                       title="定位视频"
-                      onClick={() =>
-                        setSeek((previous) => ({
-                          ms: c.startMs,
-                          sequence: (previous?.sequence ?? 0) + 1,
-                        }))
-                      }
+                      onClick={() => locate(i)}
                     >
                       {String(c.index).padStart(3, "0")} ▶
                     </button>
@@ -303,7 +348,7 @@ export function SubtitlePanel({
                     />
                   </label>
                   <label>
-                    译文 / 配音文本
+                    译文 / 配音
                     <textarea
                       disabled={locked}
                       value={c.translation || ""}

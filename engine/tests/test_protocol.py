@@ -80,7 +80,7 @@ class ProtocolTests(unittest.TestCase):
             # Explicit engine choices
             data_xtts = self.manifest(root)
             data_xtts['engine'] = 'xtts'
-            data_xtts['xttsModelPath'] = str(root / 'xtts-model')
+            data_xtts['modelPath'] = str(root / 'xtts-model')
             data_xtts['separateBgm'] = True
             data_xtts['ducking'] = False
             data_xtts['bgmVolume'] = 0.55
@@ -89,7 +89,7 @@ class ProtocolTests(unittest.TestCase):
             self.assertTrue(validated_xtts['separateBgm'])
             self.assertFalse(validated_xtts['ducking'])
             self.assertAlmostEqual(validated_xtts['bgmVolume'], 0.55)
-            self.assertEqual(validated_xtts['xttsModelPath'], str(root / 'xtts-model'))
+            self.assertEqual(validated_xtts['modelPath'], str(root / 'xtts-model'))
 
             # Invalid values
             invalid_cases = [
@@ -99,7 +99,6 @@ class ProtocolTests(unittest.TestCase):
                 {'bgmVolume': -0.1},
                 {'bgmVolume': 1.5},
                 {'bgmVolume': 'loud'},
-                {'xttsModelPath': 456},
             ]
             for patch_data in invalid_cases:
                 bad_data = self.manifest(root)

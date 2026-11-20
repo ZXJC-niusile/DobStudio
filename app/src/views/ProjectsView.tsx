@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Project, Job } from "@dobstudio/core/studio";
-import { Icon, SignalScene } from "../visuals";
+import { Icon, PrismScene } from "../visuals";
+import { readEditingPosition, timecode } from "../editingPosition";
 export function ProjectsView({
   projects,
   jobs,
@@ -26,75 +27,82 @@ export function ProjectsView({
       (filter === "all" ||
         (filter === "subtitles" ? p.cues.length > 0 : outputIds.has(p.id))),
   );
+  const position = readEditingPosition();
+  const featured =
+    projects.find((p) => p.id === position?.projectId) ?? projects[0];
+  const cue =
+    featured?.cues[
+      Math.min(
+        position?.projectId === featured.id ? position.cueIndex : 0,
+        Math.max(0, featured.cues.length - 1),
+      )
+    ];
   return (
     <>
-      <section className="hero">
-        <div className="hero-copy">
-          <div className="eyebrow">
-            <span className="live-dot" /> THE CREATIVE WORKSPACE
+      <div className="creation-deck">
+        <section className="hero">
+          <div className="hero-copy">
+            <div className="eyebrow">DOBSTUDIO</div>
+            <h2>
+              留住灵感。
+              <br />
+              <span>完成好作品。</span>
+            </h2>
+            <p>把创作交给你。其余的，在这里完成。</p>
+            <div className="hero-actions">
+              <button className="primary" onClick={importMedia}>
+                <Icon name="plus" />
+                新建项目
+                <Icon name="arrow" />
+              </button>
+              <button className="text-button" onClick={importUrl}>
+                <Icon name="link" />
+                链接导入
+              </button>
+            </div>
           </div>
-          <h2>
-            每一种声音，
-            <br />
-            <span>都有新的可能。</span>
-          </h2>
-          <p>
-            从第一帧画面，到另一种语言。
-            <br />
-            在这里，让字幕、声音和影像一起流动。
-          </p>
-          <div className="hero-actions">
-            <button className="primary" onClick={importMedia}>
-              <Icon name="plus" />
-              创建新项目
-              <Icon name="arrow" />
-            </button>
-            <button className="text-button" onClick={importUrl}>
-              <Icon name="link" />
-              从链接导入
-            </button>
+          <PrismScene />
+        </section>
+        <section className="resume-card" aria-label="继续编辑">
+          <div className="resume-heading">
+            <span>{featured ? "继续上次的创作" : "你的工作空间"}</span>
+            <Icon name="clock" size={16} />
           </div>
-          <div className="hero-footnote">
-            <span>01 / 导入影像</span>
-            <i />
-            <span>02 / 编排语言</span>
-            <i />
-            <span>03 / 赋予声音</span>
+          <div className="resume-art" aria-hidden="true">
+            <div />
+            <Icon name="film" size={28} />
           </div>
-        </div>
-        <SignalScene />
-      </section>
-      <div className="workspace-summary">
-        <div>
-          <Icon name="film" />
-          <span>项目总数</span>
-          <b>{projects.length.toString().padStart(2, "0")}</b>
-        </div>
-        <div>
-          <Icon name="captions" />
-          <span>字幕片段</span>
-          <b>
-            {projects
-              .reduce((sum, p) => sum + p.cues.length, 0)
-              .toLocaleString()}
-          </b>
-        </div>
-        <div>
-          <Icon name="layers" />
-          <span>进行中的任务</span>
-          <b>
-            {jobs
-              .filter((j) => j.status === "running" || j.status === "queued")
-              .length.toString()
-              .padStart(2, "0")}
-          </b>
-        </div>
-        <span className="summary-note">YOUR IDEAS, IN MOTION.</span>
+          {featured ? (
+            <>
+              <h3 title={featured.name}>{featured.name}</h3>
+              <p className="resume-position">
+                {cue
+                  ? `第 ${cue.index} 段 · ${timecode(cue.startMs)}`
+                  : "尚未添加字幕"}
+              </p>
+              <button
+                className="continue-button"
+                onClick={() => open(featured.id)}
+              >
+                继续编辑
+                <Icon name="arrow" size={16} />
+              </button>
+            </>
+          ) : (
+            <>
+              <h3>第一份作品，就从这里开始。</h3>
+              <p className="resume-position">视频与音频，随时加入。</p>
+              <button className="continue-button" onClick={importMedia}>
+                选择文件
+                <Icon name="arrow" size={16} />
+              </button>
+            </>
+          )}
+        </section>
       </div>
       <section className="library-section" aria-label="项目库">
         <div className="library-heading">
           <div>
-            <div className="eyebrow">YOUR LIBRARY</div>
             <h2>
               最近项目 <span>{projects.length}</span>
             </h2>
@@ -180,7 +188,7 @@ export function ProjectsView({
               <span>
                 <Icon name="plus" size={22} />
               </span>
-              <b>下一个灵感，从这里开始</b>
+              <b>新建项目</b>
               <small>导入新的视频或音频</small>
             </button>
           )}
@@ -190,11 +198,7 @@ export function ProjectsView({
             <div className="empty-glyph">
               <Icon name={projects.length ? "search" : "film"} size={28} />
             </div>
-            <h3>
-              {projects.length
-                ? "没有找到匹配的项目"
-                : "为你的第一个作品，留好位置。"}
-            </h3>
+            <h3>{projects.length ? "没有找到匹配的项目" : "还没有项目"}</h3>
             <p>
               {projects.length
                 ? "试试其他关键词或筛选条件。"

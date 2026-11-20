@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 const paths = {
   grid: "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z",
   captions:
@@ -36,37 +35,39 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     </svg>
   );
 }
-export function SignalScene() {
+export function StudioMark() {
   return (
-    <div className="signal-scene" aria-hidden="true">
-      <div className="signal-halo" />
-      <div className="orbit orbit-one" />
-      <div className="orbit orbit-two" />
-      <div className="orbit orbit-three" />
-      <div className="signal-core">
-        <div className="signal-bars">
-          {Array.from({ length: 37 }, (_, i) => (
-            <i
-              key={i}
-              style={
-                {
-                  "--height": `${18 + Math.pow(Math.sin(i * 0.49), 2) * 78 * (1 - Math.abs(i - 18) / 24)}px`,
-                  "--delay": `${-i * 0.13}s`,
-                } as CSSProperties
-              }
-            />
-          ))}
-        </div>
+    <svg
+      width="24"
+      height="27"
+      viewBox="0 0 24 27"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M5 4h6a9.5 9.5 0 0 1 0 19H5V4Z"
+        stroke="currentColor"
+        strokeWidth="3.3"
+      />
+      <path
+        d="M5 10h5"
+        stroke="currentColor"
+        strokeWidth="3.3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+export function PrismScene() {
+  return (
+    <div className="prism-scene" aria-hidden="true">
+      <div className="prism-light" />
+      <div className="prism-floor" />
+      <div className="prism-object">
+        <div className="prism-frame frame-back" />
+        <div className="prism-frame frame-middle" />
+        <div className="prism-frame frame-front" />
       </div>
-      <div className="floating-chip chip-caption">
-        <Icon name="captions" />
-        语言，让世界靠近<span>字幕</span>
-      </div>
-      <div className="floating-chip chip-wave">
-        <Icon name="wave" />
-        Every voice. Reimagined.<span>声音</span>
-      </div>
-      <div className="scene-coordinate">AUDIO × LANGUAGE × MOTION</div>
     </div>
   );
 }

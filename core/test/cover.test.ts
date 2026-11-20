@@ -1,12 +1,3 @@
-/**
- * Cover-extraction tests.
- *
- * The mock sidecar's ffmpeg writes a plausible file for any output path, so
- * these tests exercise the decision logic — which source is preferred, when a
- * downloaded "image" is rejected, and when nothing is produced — rather than
- * real image decoding.
- */
-
 import assert from "node:assert/strict";
 import { mkdtempSync, existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -5,7 +5,11 @@ import { SubtitlePanel } from "./views/SubtitlePanel";
 import { DubbingPanel } from "./views/DubbingPanel";
 import { SettingsPanel } from "./views/SettingsPanel";
 import { api, Empty } from "./bridge";
-import { Icon, type IconName } from "./visuals";
+import { Icon, StudioMark, type IconName } from "./visuals";
+import {
+  readEditingPosition,
+  rememberEditingPosition,
+} from "./editingPosition";
 import { ProjectsView } from "./views/ProjectsView";
 const routes = [
   ["projects", "项目库"],
@@ -18,7 +22,9 @@ type Route = (typeof routes)[number][0];
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [route, setRoute] = useState<Route>("projects");
-  const [selected, setSelected] = useState("");
+  const [selected, setSelected] = useState(
+    () => readEditingPosition()?.projectId ?? "",
+  );
   const [dirty, setDirty] = useState(false);
   function leave(action: () => void) {
     if (!dirty || window.confirm("字幕尚未保存，确定放弃修改？")) {
@@ -94,6 +100,7 @@ export function App() {
     const p = await act(() => api.createProject(value));
     if (p) {
       setDirty(false);
+      rememberEditingPosition(p.id);
       setSelected(p.id);
       setRoute("subtitles");
       await refresh();
@@ -118,7 +125,7 @@ export function App() {
     );
   const icons: IconName[] = ["grid", "captions", "wave", "layers", "settings"];
   const descriptions = {
-    projects: "创作空间",
+    projects: "项目库",
     subtitles: "字幕工作台",
     dubbing: "声音与配音",
     tasks: "任务记录",
@@ -132,19 +139,17 @@ export function App() {
       <aside className="sidebar">
         <div className="brand">
           <span className="brandmark">
-            <Icon name="wave" size={25} />
+            <StudioMark />
           </span>
           <div>
-            DobStudio<small>THE CREATOR’S STUDIO</small>
+            DobStudio<small>个人创作空间</small>
           </div>
         </div>
         <button className="sidebar-create" onClick={importMedia}>
           <Icon name="plus" />
           新建项目<span>＋</span>
         </button>
-        <div className="nav-title">
-          工作空间 <span>WORKSPACE</span>
-        </div>
+        <div className="nav-title">工作空间</div>
         <nav aria-label="主导航">
           {routes.map(([id, label], i) => (
             <button
@@ -162,15 +167,6 @@ export function App() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-note">
-          <div className="mini-spectrum">
-            {Array.from({ length: 17 }, (_, i) => (
-              <i key={i} style={{ height: 8 + Math.sin(i * 0.8) ** 2 * 20 }} />
-            ))}
-          </div>
-          <b>Make it sound like you.</b>
-          <p>让灵感拥有自己的声音。</p>
-        </div>
         <div className="aside-bottom">
           <span className="workspace-avatar">D</span>
           <div>
@@ -205,18 +201,14 @@ export function App() {
               <kbd>Ctrl K</kbd>
             </button>
             <span className="header-divider" />
-            <span className="edition">STANDARD</span>
+            <span className="edition">BETA 2.0</span>
             <span className="profile-avatar">D</span>
           </div>
         </header>
         <div className={`page-content route-${route}`}>
           <div className="page-heading">
             <div>
-              <div className="eyebrow">
-                {route === "projects"
-                  ? "GOOD IDEAS START HERE"
-                  : `STUDIO / ${route.toUpperCase()}`}
-              </div>
+              <div className="eyebrow">{route === "projects" ? "" : ""}</div>
               <h1>
                 {descriptions[route]}
                 <span className="heading-dot">.</span>
@@ -240,9 +232,7 @@ export function App() {
               </label>
             )}
             {route === "projects" && (
-              <span className="heading-caption">
-                A space for your next great story.
-              </span>
+              <span className="heading-caption">让创作，简单一点。</span>
             )}
           </div>
           {error && (
@@ -269,6 +259,11 @@ export function App() {
               jobs={snapshot.jobs}
               open={(id) =>
                 leave(() => {
+                  const saved = readEditingPosition();
+                  rememberEditingPosition(
+                    id,
+                    saved?.projectId === id ? saved.cueIndex : 0,
+                  );
                   setSelected(id);
                   setRoute("subtitles");
                 })
@@ -380,7 +375,7 @@ export function App() {
                   <div className="empty-glyph">
                     <Icon name="layers" size={28} />
                   </div>
-                  <h3>好作品，值得一点等待。</h3>
+                  <h3>目前没有进行中的任务。</h3>
                   <p>提交字幕或配音任务后，在这里查看进度与输出。</p>
                 </div>
               )}
@@ -390,9 +385,7 @@ export function App() {
             <SettingsPanel settings={snapshot.settings} act={act} />
           )}
           <footer className="page-footer">
-            <span>
-              DOBSTUDIO <i> / </i> MADE FOR YOUR FLOW
-            </span>
+            <span>DobStudio</span>
             <span>
               <i className="dot" />
               本地工作空间
@@ -427,7 +420,7 @@ export function App() {
             </button>
           </div>
           <div className="eyebrow">IMPORT FROM THE WEB</div>
-          <h2>把灵感带进工作室。</h2>
+          <h2>导入视频链接</h2>
           <p className="muted">粘贴视频链接，创建一个新项目。</p>
           <label>
             视频链接

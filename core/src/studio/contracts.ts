@@ -11,7 +11,6 @@ export interface Settings {
   python: string;
   modelPath: string;
   xttsModelPath?: string;
-  defaultEngine?: "cosyvoice" | "xtts";
   defaultTtsEngine?: "cosyvoice" | "xtts";
   device: "cpu" | "cuda";
   provider?: ProviderConfig;
@@ -83,7 +82,6 @@ export const DEFAULT_SETTINGS: Settings = {
   python: "python",
   modelPath: "",
   xttsModelPath: "",
-  defaultEngine: "cosyvoice",
   defaultTtsEngine: "cosyvoice",
   device: "cpu",
 };
@@ -119,11 +117,6 @@ export function validateSettings(s: Settings): void {
     throw new Error("Invalid runtime settings");
   if (s.xttsModelPath !== undefined && typeof s.xttsModelPath !== "string")
     throw new Error("Invalid XTTS model path");
-  if (
-    s.defaultEngine !== undefined &&
-    !["cosyvoice", "xtts"].includes(s.defaultEngine)
-  )
-    throw new Error("Invalid default engine");
   if (
     s.defaultTtsEngine !== undefined &&
     !["cosyvoice", "xtts"].includes(s.defaultTtsEngine)
@@ -202,13 +195,7 @@ export function validateTask(t: TaskRequest): void {
 }
 
 export function resolveDubbingConfig(settings: Settings, options: DubOptions) {
-  const engine =
-    options.engine ??
-    settings.defaultTtsEngine ??
-    settings.defaultEngine ??
-    "cosyvoice";
-  if (engine !== "cosyvoice" && engine !== "xtts")
-    throw new Error("Invalid TTS engine");
+  const engine = options.engine ?? settings.defaultTtsEngine ?? "cosyvoice";
   const modelPath = (
     engine === "xtts" ? settings.xttsModelPath : settings.modelPath
   )?.trim();

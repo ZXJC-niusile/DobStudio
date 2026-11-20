@@ -1,13 +1,3 @@
-/**
- * Process-wide concurrency limiting.
- *
- * This is the piece that stops three queued jobs from opening twelve requests
- * against a provider configured for four. Concurrency bugs are timing bugs, so
- * the tests assert on the invariants that must hold regardless of scheduling:
- * the ceiling is never exceeded, slots are always released, and a stricter
- * caller lowers the limit for everyone.
- */
-
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 

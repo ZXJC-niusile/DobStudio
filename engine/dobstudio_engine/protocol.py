@@ -25,12 +25,7 @@ def validate_manifest(data):
         if isinstance(bgm_volume, bool) or not isinstance(bgm_volume, (int, float)) or not (0.0 <= bgm_volume <= 1.0):
             raise ValueError('bgmVolume must be a float between 0.0 and 1.0')
     data.setdefault('bgmVolume', 0.3)
-    xtts_model_path = data.get('xttsModelPath')
-    if xtts_model_path is not None:
-        if not isinstance(xtts_model_path, str):
-            raise ValueError('xttsModelPath must be a string')
-    req_paths = ['mediaPath', 'outputDir', 'referencePath', 'ffmpeg', 'ffprobe']
-    req_paths.append('xttsModelPath' if data['engine'] == 'xtts' else 'modelPath')
+    req_paths = ['mediaPath', 'outputDir', 'referencePath', 'ffmpeg', 'ffprobe', 'modelPath']
     for key in req_paths:
         if not isinstance(data.get(key), str) or not Path(data[key]).is_absolute():
             raise ValueError(f'{key} must be an absolute path')

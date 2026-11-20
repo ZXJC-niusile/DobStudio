@@ -78,8 +78,8 @@ def render(data, emit):
     engine_name = data.get('engine', 'cosyvoice')
     if engine_name == 'xtts':
         from .xtts_adapter import Synthesizer
-        model_path = data.get('xttsModelPath')
-        engine = Synthesizer(model_path, data['device'], target_language=data.get('targetLanguage', 'zh'))
+        model_path = data['modelPath']
+        engine = Synthesizer(model_path, data['device'], target_language=data['targetLanguage'])
     else:
         from .cosyvoice_adapter import Synthesizer
         engine = Synthesizer(data['modelPath'], data['device'])

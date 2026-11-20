@@ -60,7 +60,7 @@ class MediaTests(unittest.TestCase):
             def synthesize(self, text, reference, prompt, output, **kwargs):
                 prompts.append((text, prompt))
                 wav(output, 0.7)
-        data = dict(self.data, engine='xtts', xttsModelPath=str(self.root / 'xtts-model'))
+        data = dict(self.data, engine='xtts', modelPath=str(self.root / 'xtts-model'))
         with patch('dobstudio_engine.xtts_adapter.Synthesizer', FakeXttsSynth):
             result = render(data, lambda e: None)
         self.assertEqual(prompts, [('你好', '')])

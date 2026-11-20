@@ -152,7 +152,6 @@ export function createExecutor(
       separateBgm: Boolean(request.options.separateBgm),
       ducking: request.options.ducking !== false,
       bgmVolume: request.options.bgmVolume ?? 0.3,
-      xttsModelPath: settings.xttsModelPath,
       modelPath,
       device: settings.device,
       ffmpeg,

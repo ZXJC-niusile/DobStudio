@@ -1,26 +1,18 @@
-"""Shared compatibility for legacy checkpoint loaders."""
+"""Checkpoint loading for the single-task inference worker."""
 from contextlib import contextmanager
-import threading
-
-_torch_load_lock = threading.RLock()
 
 
 @contextmanager
 def legacy_torch_load():
-    """Serialize legacy patches across engines and restore on every exit.
-
-    Explicit weights_only arguments are preserved; the patch is process-wide.
-    """
     import torch
-    with _torch_load_lock:
-        original = torch.load
+    original = torch.load
 
-        def load(*args, **kwargs):
-            kwargs.setdefault('weights_only', False)
-            return original(*args, **kwargs)
+    def load(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return original(*args, **kwargs)
 
-        torch.load = load
-        try:
-            yield
-        finally:
-            torch.load = original
+    torch.load = load
+    try:
+        yield
+    finally:
+        torch.load = original

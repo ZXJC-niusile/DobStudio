@@ -8,8 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from contextlib import nullcontext
-from dobstudio_engine.preflight import check_runtime, validate_model_directory
-from dobstudio_engine.protocol import validate_manifest
+from dobstudio_engine.preflight import check_runtime
 from dobstudio_engine.xtts_adapter import Synthesizer
 
 class PreflightTests(unittest.TestCase):
@@ -60,11 +59,3 @@ class PreflightTests(unittest.TestCase):
         result=subprocess.run([sys.executable,'-m','dobstudio_engine','--preflight','--engine','xtts','--model-path',str(self.root/'missing')],env=env,capture_output=True,text=True)
         self.assertEqual(result.returncode,1)
         self.assertEqual(json.loads(result.stdout)['type'],'error')
-
-    def test_xtts_manifest_requires_its_own_model_path(self):
-        data={'version':1,'engine':'xtts','modelPath':str(self.root)}
-        # Earlier missing paths fail too; a complete manifest isolates the XTTS field.
-        data.update({key:str(self.root/key) for key in ('mediaPath','outputDir','referencePath','ffmpeg','ffprobe')})
-        data.update(device='cpu',targetLanguage='en',referenceLanguage='en',referenceText='',cues=[dict(startMs=0,endMs=1000,translation='hello')])
-        with self.assertRaisesRegex(ValueError,'xttsModelPath'):
-            validate_manifest(data)
