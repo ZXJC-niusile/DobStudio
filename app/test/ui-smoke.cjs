@@ -48,6 +48,17 @@ app.whenReady().then(async () => {
   await js(`document.querySelectorAll('.library-filters button')[0].click();document.querySelector('[aria-label="列表视图"]').click()`);await waitFor(`!!document.querySelector('.project-list')`);
   await capture('03-project-list');
   await js(`document.querySelector('.project-card').click()`);await waitFor(`!!document.querySelector('.cue textarea')`);await capture('04-subtitles');await fit();
+  await js(`document.querySelectorAll('.editing-tracks .track-clip')[1].click()`);
+  await waitFor(`document.querySelector('.editing-tracks time').textContent==='00:00:03.500'`);
+  assert.equal(await js(`JSON.parse(localStorage.getItem('dobstudio.editing-position')).cueIndex`),1);
+  await js(`document.querySelector('[data-route="projects"]').click()`);
+  await waitFor(`!!document.querySelector('.continue-button')`);
+  assert.equal(await js(`document.querySelector('.resume-position').textContent.includes('00:00:03.500')`),true);
+  await capture('04a-continue-project');
+  await js(`document.querySelector('.continue-button').click()`);
+  await waitFor(`document.querySelector('.editing-tracks time')?.textContent==='00:00:03.500'`);
+  await capture('04b-selected-cue');
+
   for (const route of ['dubbing','tasks','settings']) {await js(`document.querySelector('[data-route="${route}"]').click()`);await delay(250);await capture('05-'+route);await fit();}
   await js(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',ctrlKey:true,bubbles:true}))`);await waitFor(`document.activeElement?.hasAttribute('data-project-search')`);
   await js(`document.querySelector('[aria-label="网格视图"]').click();document.querySelector('.hero-actions .text-button').click()`);await waitFor(`document.querySelector('dialog').open`);
@@ -55,6 +66,6 @@ app.whenReady().then(async () => {
   await js(`document.querySelector('[data-route="projects"]').click()`);await delay(80);
   for(const width of [1080,800]) {win.setContentSize(width,900);await delay(250);await fit();await capture('07-home-'+width);}
   assert.deepEqual(errors,[]);
-  console.log('PASS: import, search, filters, view switch, keyboard navigation, all routes and responsive widths');
+  console.log('PASS: import, search, filters, segment seeking, remembered editing position, keyboard navigation and responsive widths');
   clearTimeout(deadline);app.exit(0);
 }).catch(error=>{console.error(error);clearTimeout(deadline);app.exit(1);});

@@ -1,12 +1,3 @@
-/**
- * Resume tests.
- *
- * The property that matters is not "a checkpoint row exists" but "the second
- * run does not redo the work". So these tests run the pipeline twice against
- * the same mock binaries and count invocations: a stage that was skipped must
- * not have been called again.
- */
-
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

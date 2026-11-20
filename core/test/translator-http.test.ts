@@ -1,12 +1,3 @@
-/**
- * Translation-layer integration tests against a real HTTP server.
- *
- * The unit tests cover `parseBatchResponse` in isolation. This file exercises
- * everything in front of and behind it: `fetch`, the batching loop, the
- * concurrency pool, the retry/backoff path, and the "the model skipped some
- * lines" path — all over a real socket on an ephemeral port.
- */
-
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { after, before, describe, it } from "node:test";

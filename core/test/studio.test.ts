@@ -128,16 +128,16 @@ test("startup marks interrupted work and never resumes stale in-memory slots", (
   assert.equal(jobs.busy(p.id), false);
   repo.close();
 });
-test("settings validation handles defaultEngine and xttsModelPath", () => {
+test("settings validation handles defaultTtsEngine and xttsModelPath", () => {
   validateSettings({
     ...DEFAULT_SETTINGS,
-    defaultEngine: "xtts",
+    defaultTtsEngine: "xtts",
     xttsModelPath: "D:/models/xtts",
   });
   assert.throws(() =>
     validateSettings({
       ...DEFAULT_SETTINGS,
-      defaultEngine: "unsupported" as never,
+      defaultTtsEngine: "unsupported" as never,
     }),
   );
   assert.throws(() =>

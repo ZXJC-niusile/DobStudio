@@ -9,7 +9,7 @@
 import { existsSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { basename, join } from "node:path";
-import { audioCodecArgs, audioExtension } from "./audioFormat.ts";
+import { audioCodecArgs } from "./audioFormat.ts";
 import type { AudioFormat } from "./types.ts";
 import { readFile, rm } from "node:fs/promises";
 
@@ -54,7 +54,9 @@ export async function extractAudio(
     signal,
   });
   if (result.code !== 0) {
-    throw new Error(`ffmpeg audio extraction failed: ${result.stderr.slice(0, 600)}`);
+    throw new Error(
+      `ffmpeg audio extraction failed: ${result.stderr.slice(0, 600)}`,
+    );
   }
   if (!existsSync(outputAudio)) {
     throw new Error("ffmpeg reported success but wrote no audio file.");
@@ -185,5 +187,5 @@ export function audioPathFor(
   format: AudioFormat = "wav",
 ): string {
   const stem = basename(mediaPath).replace(/\.[^.]+$/, "");
-  return join(workDir, `${stem}.16k.${audioExtension(format)}`);
+  return join(workDir, `${stem}.16k.${format}`);
 }

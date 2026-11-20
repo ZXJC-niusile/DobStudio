@@ -10,7 +10,7 @@ DobStudio 是一款集 AI 语音识别、双语字幕翻译精修、声音克隆
 - **多引擎语音克隆**：集成 CosyVoice（阿里通义，高保真克隆、原生文本前端）与 XTTS（轻量多语言跨语种克隆）。
 - **智能伴奏分离与混音**：支持可选的 Demucs 人声/伴奏分离，提供自动降鸭（Audio Ducking）与可调节伴奏音量。
 - **专业级多格式交付**：支持原视频声轨、纯配音干声、配音+原片伴奏混音三种成片输出；支持字幕硬烧录与原画幅、16:9、9:16 画幅自适应适配。
-- **任务调度与安全沙箱**：单队列互斥排队、不可变任务快照、支持中途安全取消、断点保存与异常隔离。
+- **任务管理**：排队运行、查看进度与取消任务。
 
 ## 启动与使用
 
@@ -24,7 +24,7 @@ npm start
 
 1. 在「运行设置」一键安装字幕工具（FFmpeg / yt-dlp）及 whisper.cpp base 模型。
 2. 导入视频，在「字幕工作台」生成或导入字幕。翻译语言留空则仅转写；翻译可直接在设置中选用预设服务商（如 DeepSeek）。
-3. 校对并保存字幕，可直接导出 SRT 或烧录成片交付（无需配音时零 GPU 消耗）。
+3. 校对并保存字幕，可直接导出 SRT 或烧录成片交付。
 4. 需要配音时，配置 Python 环境和模型，在「声音与配音」选择克隆引擎、伴奏分离开关与音量后提交任务。
 5. 在任务记录中实时查看进度、一键定位打开成片与音频文件。
 
@@ -32,7 +32,7 @@ npm start
 
 ## 配音环境（按需安装）
 
-各子模块依赖高度解耦，用户可根据实际需求与硬件配置按需安装，无需全量捆绑（纯字幕用户完全无需 Python）：
+字幕功能无需 Python。配音时安装所选引擎的依赖：
 
 ```powershell
 # 1. 基础 PyTorch 环境（先在所选 Python 环境安装适配 CPU 或 CUDA 的 torch 与 torchaudio）
@@ -62,23 +62,14 @@ npm run smoke           # 桌面端端到端 Smoke 检查
 npm run package         # 生成 Windows NSIS 安装包与 Portable 便携版
 ```
 
-- `test:editor`：Electron 主进程与字幕存储契约测试，运行前先执行 build。
-- `smoke`：独立启动、IPC 通信与 Python Worker 进程协议测试，采用隔离的临时目录。
-- Python 媒体测试：可通过环境变量 `DOBSTUDIO_TEST_MEDIA_BIN` 指定本地 ffmpeg/ffprobe 目录；自动化测试中对深度学习模型采用 Mock 替身以确保轻量极速回归。
-- `package`：生成 `app/release/` 下的 NSIS 安装程序（`.exe`）与免安装便携版（`portable.exe`）。
+测试 Electron 界面前先运行 build。打包产物位于 `app/release/`。
+Python 媒体测试可通过 `DOBSTUDIO_TEST_MEDIA_BIN` 指定 ffmpeg/ffprobe 目录。
 
 ## 代码结构
 
-| 目录 | 职责与架构边界 |
-|---|---|
-| `app/src/` | React 19 渲染层：虚拟化长字幕编辑、实时播放器、模块化配音面板与设置 |
-| `app/electron/` | 桌面宿主层：强类型 Preload 沙箱、系统级文件选择、IPC 调度与应用生命周期 |
-| `core/src/studio/` | 单任务 Jobs 调度器、SQLite Repository 项目库、不可变任务快照与 Worker 协议 |
-| `core/src/` | 纯轻量工具库：字幕解析（SRT/ASS）、whisper.cpp ASR、下载器、流式翻译与媒体滤镜 |
-| `engine/dobstudio_engine/` | Python CLI Worker：按需唤起模型推理（CosyVoice/XTTS）、Demucs 伴奏提取与 FFmpeg 降鸭混音 |
-| `engine/vendor/` | 第三方开源模型库与许可证保留目录 |
-
-任务执行采用严格的只读快照机制，中间产物与音轨写入各自独立的任务目录。Python Worker 彻底废除 Web 服务端口，通过版本化的标准 JSONL 与 Electron 主进程通信。
+- `app/`：React 界面与 Electron 桌面宿主。
+- `core/`：字幕、翻译、下载、项目存储和任务调度。
+- `engine/`：Python 配音、伴奏分离与混音；通过 JSONL 与桌面端通信。
 
 ## 许可与致谢
 

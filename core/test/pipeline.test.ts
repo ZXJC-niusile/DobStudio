@@ -1,12 +1,3 @@
-/**
- * End-to-end pipeline tests against mock sidecar binaries.
- *
- * Covers `runPipeline` orchestration,
- * progress-event flow, the "source subtitles win over ASR" branch, SRT output
- * writing, and cancellation. Everything runs for real; only the media
- * processing is faked.
- */
-
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
