@@ -1,5 +1,7 @@
 # DobStudio
 
+[官方网站与下载](https://zxjc-niusile.github.io/DobStudio/)
+
 DobStudio 是一款集 AI 语音识别、双语字幕翻译精修、声音克隆配音与原声伴奏混音于一体的现代化 Windows 桌面工作站。
 
 ## 功能
@@ -64,6 +66,14 @@ npm run package         # 生成 Windows NSIS 安装包与 Portable 便携版
 
 测试 Electron 界面前先运行 build。打包产物位于 `app/release/`。
 Python 媒体测试可通过 `DOBSTUDIO_TEST_MEDIA_BIN` 指定 ffmpeg/ffprobe 目录。
+
+## 官网
+
+官网源码位于 `website/dist/`，无需构建。运行 `python -m http.server 4177 --directory website/dist` 可本地预览。发布新版本时更新 `index.html` 中的版本号、下载地址与文件大小。
+
+官网由 GitHub Pages 托管：PR 自动检查静态资源；合并到 main 后，.github/workflows/pages.yml 会发布 website/dist/。仓库 Settings → Pages 的 Source 应设为 GitHub Actions。只有官网文件变动或手动运行工作流时才部署，不构建桌面安装包。
+
+执行 python website/check.py 检查本地资源与页面锚点。官网字体为 Noto Sans SC 的页面字符子集，许可位于 website/dist/assets/NotoSansSC-OFL.txt；新增文案后用 python website/update_fonts.py 更新字体文件（需要联网，仅维护时运行）。
 
 ## 代码结构
 
