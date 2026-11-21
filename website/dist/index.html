@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>DobStudio — 视频翻译与配音工作台</title>
+    <meta
+      name="description"
+      content="在 Windows 上识别字幕、翻译视频、克隆声音。DobStudio 免费开源，将双语字幕与配音制作放进同一个工作台。"
+    />
+    <meta property="og:title" content="DobStudio — 视频翻译与配音工作台" />
+    <meta
+      property="og:description"
+      content="识别字幕、翻译视频、生成配音。免费开源的 Windows 桌面软件。"
+    />
+    <link rel="canonical" href="https://zxjc-niusile.github.io/DobStudio/" />
+    <meta
+      property="og:url"
+      content="https://zxjc-niusile.github.io/DobStudio/"
+    />
+    <meta name="theme-color" content="#0d1018" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      property="og:image:alt"
+      content="DobStudio 视频翻译与配音工作台的山湖示例画面"
+    />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:image"
+      content="https://zxjc-niusile.github.io/DobStudio/assets/mountain-film.png"
+    />
+    <link rel="icon" href="assets/mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+    <script defer src="site.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳转到正文</a>
+    <header>
+      <nav class="wrap" aria-label="主导航">
+        <a href="#" class="brand"
+          ><img
+            src="assets/mark.svg"
+            width="30"
+            height="30"
+            alt=""
+          />DobStudio<span class="beta">BETA</span></a
+        >
+        <div class="nav-links">
+          <a href="#experience">功能演示</a><a href="#workspace">工作台</a
+          ><a href="#start">开始使用</a
+          ><a href="https://github.com/ZXJC-niusile/DobStudio">GitHub</a>
+        </div>
+        <a class="nav-download" href="#download">下载 Windows 版</a>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero wrap">
+        <div class="hero-intro">
+          <div>
+            <p class="eyebrow">视频翻译与配音工作台</p>
+            <h1>视频翻译<br /><span>与声音克隆</span></h1>
+          </div>
+          <div class="hero-aside">
+            <p>
+              自动识别、翻译字幕，生成配音。<br />在 Windows
+              桌面完成视频本地化。
+            </p>
+            <a class="button primary" href="#download"
+              ><svg aria-hidden="true" viewBox="0 0 20 20">
+                <path
+                  d="M2 3l7-1v7H2zm9-1l7-1v8h-7zM2 11h7v7l-7-1zm9 0h7v8l-7-1z"
+                  fill="currentColor"
+                /></svg
+              >免费下载</a
+            ><span class="meta">Windows x64 · 免费开源</span>
+          </div>
+        </div>
+        <div class="demo" id="experience" data-mode="translate">
+          <div class="demo-top">
+            <span><i class="film-icon" aria-hidden="true"></i>山间来信.mp4</span
+            ><span class="demo-label">交互演示 · 示例内容</span>
+          </div>
+          <div class="demo-body">
+            <div class="film">
+              <img
+                class="landscape"
+                src="assets/mountain-film.png"
+                width="1672"
+                height="941"
+                fetchpriority="high"
+                alt="山间湖泊与独木舟，AI 生成的短片示例画面"
+              />
+              <div class="film-grain"></div>
+              <div class="film-kicker">山间来信 · 示例素材</div>
+              <div class="film-subtitles">
+                <span id="translated-line">走得慢一点，才能听见山的声音。</span
+                ><span id="original-line"
+                  >Slow down. Listen to the mountains.</span
+                >
+              </div>
+              <div class="film-bottom">
+                <span>00:12 / 02:48</span><span>EN <b>/</b> 中文</span>
+              </div>
+            </div>
+            <aside class="inspector">
+              <div class="inspector-heading">
+                <span id="demo-heading">对照翻译</span
+                ><span class="tiny-tag" id="demo-tag">EN / 中文</span>
+              </div>
+              <div class="cue">
+                <span class="timecode">00:08 — 00:12</span>
+                <p>Some places ask you to stay.</p>
+                <p class="translation">有些地方，让人想多留一会儿。</p>
+              </div>
+              <div class="cue current">
+                <span class="timecode">00:12 — 00:16</span>
+                <p>Slow down. Listen to the mountains.</p>
+                <p class="translation">走得慢一点，才能听见山的声音。</p>
+              </div>
+              <div class="cue">
+                <span class="timecode">00:16 — 00:20</span>
+                <p>There is a world beyond the noise.</p>
+                <p class="translation">喧嚣之外，另有天地。</p>
+              </div>
+              <div class="voice-panel">
+                <span>参考人声</span>
+                <div class="voice-wave" aria-hidden="true"></div>
+                <p>旁白.wav <span>CosyVoice / XTTS</span></p>
+              </div>
+              <div class="inspector-foot" id="demo-foot">
+                原文与译文，逐句校对。
+              </div>
+            </aside>
+          </div>
+          <div class="timeline">
+            <div class="ruler">
+              <span>00:08</span><span>00:12</span><span>00:16</span
+              ><span>00:20</span><span>00:24</span>
+            </div>
+            <div class="tracks">
+              <span class="track-label">字幕</span>
+              <div class="clips">
+                <i>有些地方，让人想多留一会儿。</i
+                ><i class="selected">走得慢一点，才能听见山的声音。</i
+                ><i>喧嚣之外，另有天地。</i>
+              </div>
+              <span class="track-label">人声</span>
+              <div class="audio-track" aria-hidden="true"></div>
+            </div>
+            <div class="playhead"></div>
+          </div>
+        </div>
+        <div class="demo-controls">
+          <div role="tablist" aria-label="探索处理步骤" class="mode-tabs">
+            <button
+              role="tab"
+              id="mode-subtitle"
+              aria-controls="mode-description"
+              aria-selected="false"
+              tabindex="-1"
+              data-mode="subtitle"
+            >
+              识别字幕</button
+            ><button
+              role="tab"
+              id="mode-translate"
+              aria-controls="mode-description"
+              aria-selected="true"
+              data-mode="translate"
+            >
+              翻译字幕</button
+            ><button
+              role="tab"
+              id="mode-voice"
+              aria-controls="mode-description"
+              aria-selected="false"
+              tabindex="-1"
+              data-mode="voice"
+            >
+              生成配音
+            </button>
+          </div>
+          <p
+            id="mode-description"
+            role="tabpanel"
+            aria-labelledby="mode-translate"
+          >
+            接入自己的翻译 API，逐句校对双语字幕。
+          </p>
+        </div>
+      </section>
+      <section class="editor-section wrap" id="workspace">
+        <div class="section-intro reveal">
+          <div>
+            <p class="eyebrow">字幕工作台</p>
+            <h2>双语字幕编辑</h2>
+          </div>
+          <p>选择一句字幕，修改译文。<br />画面预览会同步更新。</p>
+        </div>
+        <div class="live-editor reveal">
+          <div class="editor-bar">
+            <span class="editor-file"
+              ><img
+                src="assets/mark.svg"
+                width="22"
+                height="22"
+                alt=""
+              />山间来信.mp4</span
+            ><span class="editor-demo-label">可交互示例</span
+            ><button id="export-example" class="editor-export">
+              导出示例 SRT
+            </button>
+          </div>
+          <div class="editor-grid">
+            <div class="editor-monitor">
+              <div class="monitor-picture">
+                <img
+                  src="assets/mountain-film.png"
+                  width="1672"
+                  height="941"
+                  alt="字幕编辑示例画面"
+                  loading="lazy"
+                />
+                <div class="monitor-caption">
+                  <span id="edit-preview-zh"
+                    >走得慢一点，才能听见山的声音。</span
+                  ><span id="edit-preview-en"
+                    >Slow down. Listen to the mountains.</span
+                  >
+                </div>
+              </div>
+              <div class="monitor-info">
+                <span id="edit-time">00:12 — 00:16</span>
+                <div
+                  class="caption-modes"
+                  role="group"
+                  aria-label="字幕预览语言"
+                >
+                  <button data-caption="bilingual" aria-pressed="true">
+                    双语</button
+                  ><button data-caption="translated" aria-pressed="false">
+                    译文</button
+                  ><button data-caption="original" aria-pressed="false">
+                    原文
+                  </button>
+                </div>
+              </div>
+              <div class="editor-cues" role="group" aria-label="选择示例字幕">
+                <button data-cue="0" aria-pressed="false">
+                  <span>00:08</span
+                  ><span>有些地方，让人想多留一会儿。</span></button
+                ><button data-cue="1" aria-pressed="true">
+                  <span>00:12</span
+                  ><span>走得慢一点，才能听见山的声音。</span></button
+                ><button data-cue="2" aria-pressed="false">
+                  <span>00:16</span><span>喧嚣之外，另有天地。</span>
+                </button>
+              </div>
+            </div>
+            <div class="editor-form">
+              <div class="edit-heading">
+                <h3>编辑字幕</h3>
+                <span id="cue-counter">02 / 03</span>
+              </div>
+              <div class="source-label">原文 <span>English</span></div>
+              <p class="source-text" id="source-text">
+                Slow down. Listen to the mountains.
+              </p>
+              <label for="translation-input">译文 <span>简体中文</span></label
+              ><textarea
+                id="translation-input"
+                rows="3"
+                maxlength="160"
+                spellcheck="false"
+              >
+走得慢一点，才能听见山的声音。</textarea>
+              <div class="edit-feedback">
+                <span id="edit-status" role="status">点击译文即可编辑</span
+                ><button id="reset-example">还原示例</button>
+              </div>
+              <div class="editor-note">
+                <span class="note-icon" aria-hidden="true">T</span>
+                <p>
+                  译文也用于生成配音。<br /><span
+                    >在桌面版中配置模型与参考人声后使用。</span
+                  >
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="principles wrap">
+        <div class="reveal">
+          <span class="feature-mark">Aa</span>
+          <h3>本地语音识别</h3>
+          <p>本地识别，无需 Python 或显卡。<br />只想要字幕，导出 SRT 就好。</p>
+        </div>
+        <div class="reveal">
+          <span class="feature-mark waveform-mark" aria-hidden="true"
+            >▂ ▅ ▃ ▇ ▄ ▂</span
+          >
+          <h3>参考人声配音</h3>
+          <p>
+            配置 CosyVoice 或 XTTS，提供参考人声。<br />生成配音，再混入原片伴奏。
+          </p>
+        </div>
+        <div class="reveal">
+          <span class="feature-mark code-mark" aria-hidden="true"
+            >&lt; / &gt;</span
+          >
+          <h3>免费开源</h3>
+          <p>开源代码，自选翻译 API。<br />项目留在桌面，素材由你管理。</p>
+        </div>
+      </section>
+      <section class="getting-started wrap" id="start">
+        <div class="section-intro">
+          <div>
+            <p class="eyebrow">首次使用</p>
+            <h2>从导入到导出</h2>
+          </div>
+          <a
+            class="guide-link"
+            href="https://github.com/ZXJC-niusile/DobStudio#启动与使用"
+            >查看完整使用说明</a
+          >
+        </div>
+        <ol class="start-steps">
+          <li>
+            <h3>安装字幕工具</h3>
+            <p>
+              下载并打开桌面版，在「运行设置」安装 FFmpeg、yt-dlp 与 whisper.cpp
+              识别模型。
+            </p>
+          </li>
+          <li>
+            <h3>导入并翻译</h3>
+            <p>
+              导入本地音视频或粘贴视频链接，生成字幕。需要翻译时，配置自己的 API
+              服务与目标语言。
+            </p>
+          </li>
+          <li>
+            <h3>校对并导出</h3>
+            <p>
+              修改原文、译文与时间，保存后导出 SRT，或将字幕烧录进视频。已有 SRT
+              也可直接导入。
+            </p>
+          </li>
+        </ol>
+        <div class="requirements">
+          <div>
+            <h3>只做字幕</h3>
+            <p>
+              Windows x64，无需 Python
+              或独立显卡。下载识别模型后可在本地转写，在线翻译需要 API。
+            </p>
+          </div>
+          <div>
+            <h3>还需要配音</h3>
+            <p>
+              另行配置 Python、PyTorch 和 CosyVoice 或 XTTS。准备 0.5–29
+              秒单人声 WAV 与对应文本；保留伴奏时启用 Demucs。
+            </p>
+            <a
+              class="guide-link"
+              href="https://github.com/ZXJC-niusile/DobStudio#配音环境按需安装"
+              >配音环境配置</a
+            >
+          </div>
+        </div>
+        <div class="delivery">
+          <span>可交付</span>
+          <p>SRT 字幕 · 配音 WAV · 字幕／配音视频</p>
+          <span>画幅</span>
+          <p>原画幅 · 16:9 · 9:16</p>
+        </div>
+      </section>
+      <section class="download-section" id="download">
+        <div class="wrap download-inner">
+          <div>
+            <p class="eyebrow">DOBSTUDIO / BETA 2.0</p>
+            <h2>下载 DobStudio</h2>
+            <p class="download-lead">Windows x64 · v2.0.0-beta</p>
+            <p class="release-context">
+              Beta 测试版，当前提供 Windows
+              安装包与便携版。网页为功能示例，实际界面以下载版本为准。
+            </p>
+          </div>
+          <div class="downloads">
+            <a
+              class="download-card"
+              href="https://github.com/ZXJC-niusile/DobStudio/releases/download/v2.0.0-beta/DobStudio-2.0.0-beta-setup.exe"
+              ><span
+                ><strong>下载安装版</strong
+                ><small>安装到电脑，随时打开</small></span
+              ><span class="package-meta"
+                >117 MiB<svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"
+                  /></svg></span></a
+            ><a
+              class="download-card portable"
+              href="https://github.com/ZXJC-niusile/DobStudio/releases/download/v2.0.0-beta/DobStudio-2.0.0-beta-portable.exe"
+              ><span
+                ><strong>下载便携版</strong
+                ><small>无需安装，直接运行</small></span
+              ><span class="package-meta"
+                >106 MiB<svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" /></svg></span
+            ></a>
+            <p>
+              首次启动后安装字幕工具与识别模型。<br />声音克隆另需
+              Python、模型与依赖。<a
+                href="https://github.com/ZXJC-niusile/DobStudio/releases/tag/v2.0.0-beta"
+                >版本说明</a
+              >
+            </p>
+          </div>
+        </div>
+      </section>
+      <section class="faq wrap" id="questions">
+        <h2>常见问题</h2>
+        <div>
+          <details>
+            <summary>软件和模型都是免费的吗？</summary>
+            <p>
+              DobStudio 软件免费，自有代码采用 MIT 协议。在线翻译按 API
+              服务商计费，模型遵循各自许可证：<a
+                href="https://github.com/FunAudioLLM/CosyVoice/blob/main/LICENSE"
+                >CosyVoice 代码</a
+              >、<a href="https://huggingface.co/coqui/XTTS-v2">XTTS-v2 权重</a
+              >；其他模型请查阅其模型卡。
+            </p>
+          </details>
+          <details>
+            <summary>我的视频会上传吗？</summary>
+            <p>
+              网页示例编辑仅发生在当前页面。桌面软件的项目和本地模型推理在电脑上运行。使用在线翻译时，字幕文本会发送到你配置的
+              API 服务。
+            </p>
+          </details>
+          <details>
+            <summary>支持 macOS 或 Linux 吗？</summary>
+            <p>当前发布的安装包仅适用于 Windows x64。</p>
+          </details>
+          <details>
+            <summary>网页可以处理我的视频吗？</summary>
+            <p>
+              网页只展示示例字幕编辑，不会处理视频或调用模型。识别、翻译和配音请在桌面软件中完成。
+            </p>
+          </details>
+          <details>
+            <summary>便携版能把项目一起带走吗？</summary>
+            <p>
+              便携版免安装，但项目与配置仍保存在系统用户目录，不会随程序文件一起移动。
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+    <footer class="wrap">
+      <a href="#" class="brand"
+        ><img src="assets/mark.svg" width="30" height="30" alt="" />DobStudio</a
+      ><span>视频翻译与配音工作台</span>
+      <div>
+        <a href="https://github.com/ZXJC-niusile/DobStudio">GitHub</a
+        ><a href="https://github.com/ZXJC-niusile/DobStudio/issues">反馈建议</a
+        ><a href="#start">使用说明</a
+        ><a href="https://github.com/ZXJC-niusile/DobStudio/releases"
+          >版本记录</a
+        ><a href="https://github.com/ZXJC-niusile/DobStudio/blob/main/LICENSE"
+          >MIT</a
+        ><a href="assets/NotoSansSC-OFL.txt">字体许可</a>
+      </div>
+    </footer>
+  </body>
+</html>
